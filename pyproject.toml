@@ -1,0 +1,62 @@
+[project]
+name = "talenthunt-os"
+version = "0.1.0"
+description = "AI-powered, Copilot-first, voice-enabled talent hunting platform"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Core
+    "nicegui>=2.0",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "keyring>=25.0",
+    "cryptography>=42.0",
+    "apscheduler>=3.10",
+    
+    # AI Orchestration
+    "langchain>=0.3",
+    "langgraph>=0.2",
+    "crewai>=0.80",
+    "llama-index>=0.11",
+    "pydantic-ai>=0.1",
+    "routellm",
+    
+    # Local AI
+    "llama-cpp-python>=0.3",
+    
+    # Voice
+    "pipecat-ai>=0.1",
+    "deepgram-sdk>=3.0",
+    "elevenlabs>=1.0",
+    
+    # Discovery
+    "scrapegraphai",
+    "crawl4ai>=0.4",
+    "playwright>=1.40",
+    "beautifulsoup4>=4.12",
+    "trafilatura>=1.8",
+    
+    # Vector Search
+    "chromadb>=0.5",
+    "fastembed>=0.3",
+    
+    # Document Processing
+    "pypdf>=4.0",
+    "python-docx>=1.0",
+    "rapidocr-onnxruntime",
+    "reportlab>=4.1",
+    
+    # Utilities
+    "rapidfuzz>=3.6",
+    "aiosmtplib>=3.0",
+    "plotly>=5.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ['.']
+include = ['app*']
+

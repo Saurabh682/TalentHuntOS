@@ -1,0 +1,2324 @@
+{
+  "nodes": [
+    {
+      "id": "context_actioncontext",
+      "label": "ActionContext",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/actions/context.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "registry_actionregistry",
+      "label": "Action Registry",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/actions/registry.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "tools_agenttools",
+      "label": "Agent Tools",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/agents/tools.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "workers_crewworkers",
+      "label": "CrewAI Worker Agents",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/agents/workers.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "workflows_crewworkflows",
+      "label": "Talent Hunt Workflows",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/agents/workflows.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "engine_aiengine",
+      "label": "AIEngine",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/ai/engine.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "localserver_localmanager",
+      "label": "LocalServerManager",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/ai/local_server.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "reports_analyticsexporter",
+      "label": "Analytics Report Exporter",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/analytics/reports.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "service_analyticsservice",
+      "label": "Analytics Calculation Service",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/analytics/service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_candidateorm",
+      "label": "Candidate ORM Models",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/candidates/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "rag_candidateragpipeline",
+      "label": "CandidateRAGPipeline",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/candidates/rag.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "search_candidatevectorindex",
+      "label": "CandidateVectorIndex",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/candidates/search.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "service_candidate_service",
+      "label": "Candidate CRUD Service",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/candidates/service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "communications_init",
+      "label": "Communications Package Init",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/__init__.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "email_service_send_email",
+      "label": "Email Delivery Service",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/email_service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_communication_thread",
+      "label": "CommunicationThread ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_communication",
+      "label": "Communication ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_message_template",
+      "label": "MessageTemplate ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_outreach_sequence",
+      "label": "OutreachSequence ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_outreach_step",
+      "label": "OutreachStep ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_outreach_enrollment",
+      "label": "OutreachEnrollment ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_email_account",
+      "label": "EmailAccount ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_browser_session",
+      "label": "BrowserSession ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "outreach_service_engine",
+      "label": "Outreach Drip Campaign Engine",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/outreach_service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "communications_service",
+      "label": "Communications Hub Service",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "template_engine_renderer",
+      "label": "Outreach Template Renderer",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/communications/template_engine.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "config_init",
+      "label": "Config Package Init",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/config/__init__.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "constants_app",
+      "label": "App Constants and Palette",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/config/constants.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "settings_config",
+      "label": "App BaseSettings Configuration",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/config/settings.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "copilot_init",
+      "label": "Copilot Package Init",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/copilot/__init__.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "conversation_manager",
+      "label": "Copilot Conversation Memory",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/copilot/conversation.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "orchestrator_copilot_graph",
+      "label": "Copilot LangGraph Orchestrator",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/copilot/orchestrator.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "prompts_copilot",
+      "label": "Copilot System Prompts",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/copilot/prompts.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "streaming_copilot",
+      "label": "Copilot Response Streamer",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/copilot/streaming.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "tools_copilot",
+      "label": "Copilot LangChain Tools",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/copilot/tools.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "hunts_init",
+      "label": "Hunts Package Init",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/hunts/__init__.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_talent_hunt",
+      "label": "TalentHunt ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/hunts/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_hunt_search_config",
+      "label": "HuntSearchConfig ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/hunts/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_hunt_stage",
+      "label": "HuntStage ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/hunts/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_hunt_candidate",
+      "label": "HuntCandidate ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/hunts/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "models_hunt_activity",
+      "label": "HuntActivity ORM Model",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/hunts/models.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "pipeline_orchestrator",
+      "label": "Hunt Pipeline Kanban Orchestrator",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/hunts/pipeline.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "hunts_service",
+      "label": "Talent Hunt Campaign Service",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/hunts/service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "infrastructure_init",
+      "label": "Infrastructure Package Init",
+      "file_type": "code",
+      "source_file": "TalentHuntOS/app/infrastructure/__init__.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "db_base",
+      "label": "Base Model Class",
+      "file_type": "code",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "db_user",
+      "label": "User Model",
+      "file_type": "code",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "db_aisettings",
+      "label": "AISettings Model",
+      "file_type": "code",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "db_localmodelregistry",
+      "label": "LocalModelRegistry Model",
+      "file_type": "code",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "db_featureflag",
+      "label": "FeatureFlag Model",
+      "file_type": "code",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "db_init_db",
+      "label": "init_db",
+      "file_type": "code",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "db_get_db",
+      "label": "get_db",
+      "file_type": "code",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "auto_pilot_autopilotscheduler",
+      "label": "AutoPilotScheduler",
+      "file_type": "code",
+      "source_file": "app/intelligence/auto_pilot.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "auto_pilot_run_autopilot_hunt_job",
+      "label": "run_autopilot_hunt_job",
+      "file_type": "code",
+      "source_file": "app/intelligence/auto_pilot.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "auto_pilot_start_global_autopilot",
+      "label": "start_global_autopilot",
+      "file_type": "code",
+      "source_file": "app/intelligence/auto_pilot.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "candidate_dna_candidatedna",
+      "label": "CandidateDNA Dataclass",
+      "file_type": "code",
+      "source_file": "app/intelligence/candidate_dna.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "candidate_dna_generate_candidate_dna",
+      "label": "generate_candidate_dna",
+      "file_type": "code",
+      "source_file": "app/intelligence/candidate_dna.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "candidate_dna_calculate_dna_similarity",
+      "label": "calculate_dna_similarity",
+      "file_type": "code",
+      "source_file": "app/intelligence/candidate_dna.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "candidate_dna_find_similar_candidates",
+      "label": "find_similar_candidates",
+      "file_type": "code",
+      "source_file": "app/intelligence/candidate_dna.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "jd_writer_jdbiasanalysis",
+      "label": "JDBiasAnalysis Dataclass",
+      "file_type": "code",
+      "source_file": "app/intelligence/jd_writer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "jd_writer_analyze_jd_bias",
+      "label": "analyze_jd_bias",
+      "file_type": "code",
+      "source_file": "app/intelligence/jd_writer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "jd_writer_debias_jd",
+      "label": "debias_jd",
+      "file_type": "code",
+      "source_file": "app/intelligence/jd_writer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "jd_writer_generate_optimized_jd",
+      "label": "generate_optimized_jd",
+      "file_type": "code",
+      "source_file": "app/intelligence/jd_writer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "jd_writer_enhance_jd",
+      "label": "enhance_jd",
+      "file_type": "code",
+      "source_file": "app/intelligence/jd_writer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "signal_detector_hiringsignal",
+      "label": "HiringSignal Dataclass",
+      "file_type": "code",
+      "source_file": "app/intelligence/signal_detector.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "signal_detector_detect_candidate_signals",
+      "label": "detect_candidate_signals",
+      "file_type": "code",
+      "source_file": "app/intelligence/signal_detector.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "signal_detector_simulate_signal_feed",
+      "label": "simulate_signal_feed",
+      "file_type": "code",
+      "source_file": "app/intelligence/signal_detector.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "signal_detector_rank_candidates_by_signal_readiness",
+      "label": "rank_candidates_by_signal_readiness",
+      "file_type": "code",
+      "source_file": "app/intelligence/signal_detector.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "main_app",
+      "label": "TalentHunt OS Main Application",
+      "file_type": "code",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "layout_create_layout",
+      "label": "create_layout Shell",
+      "file_type": "code",
+      "source_file": "app/ui/layout.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "analytics_render_analytics",
+      "label": "render_analytics View",
+      "file_type": "code",
+      "source_file": "app/ui/pages/analytics.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "analytics_analytics_page",
+      "label": "analytics_page Route",
+      "file_type": "code",
+      "source_file": "app/ui/pages/analytics.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "candidate_detail_render_candidate_detail",
+      "label": "render_candidate_detail View",
+      "file_type": "code",
+      "source_file": "app/ui/pages/candidate_detail.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "candidate_detail_candidate_detail_page",
+      "label": "candidate_detail_page Route",
+      "file_type": "code",
+      "source_file": "app/ui/pages/candidate_detail.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "candidates_render_candidates",
+      "label": "render_candidates View",
+      "file_type": "code",
+      "source_file": "app/ui/pages/candidates.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "candidates_candidates_page",
+      "label": "candidates_page Route",
+      "file_type": "code",
+      "source_file": "app/ui/pages/candidates.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "communications_render_communications",
+      "label": "render_communications View",
+      "file_type": "code",
+      "source_file": "app/ui/pages/communications.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "communications_communications_page",
+      "label": "communications_page Route",
+      "file_type": "code",
+      "source_file": "app/ui/pages/communications.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "dashboard_render_dashboard",
+      "label": "render_dashboard View",
+      "file_type": "code",
+      "source_file": "app/ui/pages/dashboard.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "dashboard_dashboard_page",
+      "label": "dashboard_page Route",
+      "file_type": "code",
+      "source_file": "app/ui/pages/dashboard.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "hunts_render_hunts",
+      "label": "render_hunts View",
+      "file_type": "code",
+      "source_file": "app/ui/pages/hunts.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "hunts_hunts_page",
+      "label": "hunts_page Route",
+      "file_type": "code",
+      "source_file": "app/ui/pages/hunts.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "pipeline_render_pipeline",
+      "label": "render_pipeline View",
+      "file_type": "code",
+      "source_file": "app/ui/pages/pipeline.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "pipeline_pipeline_page",
+      "label": "pipeline_page Route",
+      "file_type": "code",
+      "source_file": "app/ui/pages/pipeline.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "settings_render_settings",
+      "label": "render_settings View",
+      "file_type": "code",
+      "source_file": "app/ui/pages/settings.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "settings_settings_page",
+      "label": "settings_page Route",
+      "file_type": "code",
+      "source_file": "app/ui/pages/settings.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "browser_panel_render_browser_panel",
+      "label": "render_browser_panel Component",
+      "file_type": "code",
+      "source_file": "app/ui/panels/browser_panel.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "copilot_panel_render_copilot_panel",
+      "label": "render_copilot_panel Component",
+      "file_type": "code",
+      "source_file": "app/ui/panels/copilot_panel.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "theme_color_schemes",
+      "label": "COLOR_SCHEMES Palette Definitions",
+      "file_type": "code",
+      "source_file": "app/ui/theme.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "theme_get_theme_css",
+      "label": "get_theme_css",
+      "file_type": "code",
+      "source_file": "app/ui/theme.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "theme_apply_theme",
+      "label": "apply_theme",
+      "file_type": "code",
+      "source_file": "app/ui/theme.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "audio_bridge_connection_manager",
+      "label": "AudioBridgeConnectionManager",
+      "file_type": "code",
+      "source_file": "app/voice/audio_bridge.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "audio_bridge_websocket_endpoint",
+      "label": "audio_websocket_endpoint",
+      "file_type": "code",
+      "source_file": "app/voice/audio_bridge.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "audio_bridge_setup",
+      "label": "setup_audio_bridge",
+      "file_type": "code",
+      "source_file": "app/voice/audio_bridge.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "pipeline_pipecat_voice_pipeline",
+      "label": "PipecatVoicePipeline",
+      "file_type": "code",
+      "source_file": "app/voice/pipeline.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "pipeline_process_voice_input",
+      "label": "PipecatVoicePipeline.process_voice_input",
+      "file_type": "code",
+      "source_file": "app/voice/pipeline.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "deepgram_stt_provider",
+      "label": "DeepgramSTTProvider",
+      "file_type": "code",
+      "source_file": "app/voice/providers/deepgram_stt.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "deepgram_stt_transcribe_audio",
+      "label": "DeepgramSTTProvider.transcribe_audio",
+      "file_type": "code",
+      "source_file": "app/voice/providers/deepgram_stt.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "elevenlabs_tts_provider",
+      "label": "ElevenLabsTTSProvider",
+      "file_type": "code",
+      "source_file": "app/voice/providers/elevenlabs_tts.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "elevenlabs_tts_generate_speech",
+      "label": "ElevenLabsTTSProvider.generate_speech",
+      "file_type": "code",
+      "source_file": "app/voice/providers/elevenlabs_tts.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "vad_silero_vad",
+      "label": "SileroVAD",
+      "file_type": "code",
+      "source_file": "app/voice/vad.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "vad_calculate_rms",
+      "label": "SileroVAD.calculate_rms",
+      "file_type": "code",
+      "source_file": "app/voice/vad.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "vad_is_speech",
+      "label": "SileroVAD.is_speech",
+      "file_type": "code",
+      "source_file": "app/voice/vad.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "pyproject_talenthunt_os",
+      "label": "TalentHunt OS Project Package",
+      "file_type": "document",
+      "source_file": "pyproject.toml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "pyproject_dependencies",
+      "label": "TalentHunt OS Dependencies",
+      "file_type": "document",
+      "source_file": "pyproject.toml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "build_installer_main",
+      "label": "build_installer.main",
+      "file_type": "code",
+      "source_file": "scripts/build_installer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "build_installer_check_pyinstaller",
+      "label": "check_and_install_pyinstaller",
+      "file_type": "code",
+      "source_file": "scripts/build_installer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "build_installer_find_llama_server",
+      "label": "find_llama_server",
+      "file_type": "code",
+      "source_file": "scripts/build_installer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "build_installer_build_pyinstaller_args",
+      "label": "build_pyinstaller_args",
+      "file_type": "code",
+      "source_file": "scripts/build_installer.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "test_candidate_dna_suite",
+      "label": "Candidate DNA Test Suite",
+      "file_type": "code",
+      "source_file": "tests/test_candidate_dna.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "test_db_suite",
+      "label": "Database Infrastructure Test Suite",
+      "file_type": "code",
+      "source_file": "tests/test_db.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "test_email_service_suite",
+      "label": "Email Service Test Suite",
+      "file_type": "code",
+      "source_file": "tests/test_email_service.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "test_functionality_e2e_suite",
+      "label": "E2E Workflows Test Suite",
+      "file_type": "code",
+      "source_file": "tests/test_functionality_e2e.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "test_vad_suite",
+      "label": "Voice Activity Detection Test Suite",
+      "file_type": "code",
+      "source_file": "tests/test_vad.py",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "frontend_design_rule",
+      "label": "Frontend Design & UI Planning Rule",
+      "file_type": "document",
+      "source_file": ".agents/rules/frontend_design.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "ui_layout_planning_concept",
+      "label": "UI Layout & Flexbox Container Planning",
+      "file_type": "document",
+      "source_file": ".agents/rules/frontend_design.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "ui_ux_directives_rule",
+      "label": "Technical UI/UX Directives",
+      "file_type": "document",
+      "source_file": ".agents/rules/ui_ux_directives.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "typography_hierarchy_rule",
+      "label": "Strict 4-Level Typography Hierarchy",
+      "file_type": "document",
+      "source_file": ".agents/rules/ui_ux_directives.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "spatial_8pt_rule",
+      "label": "8pt Spatial System & Responsive Breakpoints",
+      "file_type": "document",
+      "source_file": ".agents/rules/ui_ux_directives.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "color_60_30_10_rule",
+      "label": "60-30-10 Color Rule & Interaction States",
+      "file_type": "document",
+      "source_file": ".agents/rules/ui_ux_directives.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "graphify_skill",
+      "label": "Graphify Knowledge Graph Skill",
+      "file_type": "document",
+      "source_file": ".agents/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "graphify_karpathy_raw_workflow",
+      "label": "Karpathy /raw Folder Workflow",
+      "file_type": "document",
+      "source_file": ".agents/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "graphify_semantic_extraction",
+      "label": "Parallel Subagent Semantic Extraction",
+      "file_type": "document",
+      "source_file": ".agents/skills/graphify/SKILL.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_talenthunt_os",
+      "label": "TalentHunt OS Overview",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "registry_actionregistry",
+      "target": "context_actioncontext",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/actions/registry.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "workers_crewworkers",
+      "target": "engine_aiengine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/agents/workers.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "workers_crewworkers",
+      "target": "tools_agenttools",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/agents/workers.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "workflows_crewworkflows",
+      "target": "workers_crewworkers",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/agents/workflows.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "tools_agenttools",
+      "target": "models_candidateorm",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/agents/tools.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "service_analyticsservice",
+      "target": "models_candidateorm",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/analytics/service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "rag_candidateragpipeline",
+      "target": "models_candidateorm",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/candidates/rag.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "rag_candidateragpipeline",
+      "target": "engine_aiengine",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/candidates/rag.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "search_candidatevectorindex",
+      "target": "models_candidateorm",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "source_file": "TalentHuntOS/app/candidates/search.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "service_candidate_service",
+      "target": "models_hunt_candidate",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/candidates/service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "service_candidate_service",
+      "target": "models_communication",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/candidates/service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "outreach_service_engine",
+      "target": "template_engine_renderer",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/communications/outreach_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "outreach_service_engine",
+      "target": "email_service_send_email",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/communications/outreach_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "outreach_service_engine",
+      "target": "communications_service",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/communications/outreach_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "outreach_service_engine",
+      "target": "models_outreach_enrollment",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/communications/outreach_service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "communications_service",
+      "target": "models_communication_thread",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/communications/service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "streaming_copilot",
+      "target": "orchestrator_copilot_graph",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/copilot/streaming.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "streaming_copilot",
+      "target": "conversation_manager",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/copilot/streaming.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "streaming_copilot",
+      "target": "prompts_copilot",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/copilot/streaming.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "orchestrator_copilot_graph",
+      "target": "tools_copilot",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/copilot/orchestrator.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "tools_copilot",
+      "target": "hunts_service",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/copilot/tools.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "hunts_service",
+      "target": "constants_app",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/hunts/service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "hunts_service",
+      "target": "models_talent_hunt",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/hunts/service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "hunts_service",
+      "target": "models_hunt_stage",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/hunts/service.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_orchestrator",
+      "target": "models_hunt_activity",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/hunts/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_orchestrator",
+      "target": "models_hunt_candidate",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/hunts/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "models_outreach_step",
+      "target": "models_message_template",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "models_outreach_enrollment",
+      "target": "models_outreach_sequence",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "models_hunt_candidate",
+      "target": "models_talent_hunt",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/hunts/models.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "models_hunt_candidate",
+      "target": "models_hunt_stage",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/hunts/models.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "models_communication",
+      "target": "models_communication_thread",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "source_file": "TalentHuntOS/app/communications/models.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "template_engine_renderer",
+      "target": "service_candidate_service",
+      "relation": "shares_data_with",
+      "confidence": "INFERRED",
+      "source_file": "TalentHuntOS/app/communications/template_engine.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "db_user",
+      "target": "db_base",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "db_aisettings",
+      "target": "db_base",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "db_localmodelregistry",
+      "target": "db_base",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "db_featureflag",
+      "target": "db_base",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "db_aisettings",
+      "target": "db_user",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/infrastructure/db.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "auto_pilot_run_autopilot_hunt_job",
+      "target": "candidate_dna_generate_candidate_dna",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/auto_pilot.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "auto_pilot_autopilotscheduler",
+      "target": "auto_pilot_run_autopilot_hunt_job",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/auto_pilot.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "auto_pilot_start_global_autopilot",
+      "target": "auto_pilot_autopilotscheduler",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/auto_pilot.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "candidate_dna_generate_candidate_dna",
+      "target": "candidate_dna_candidatedna",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/candidate_dna.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "candidate_dna_calculate_dna_similarity",
+      "target": "candidate_dna_candidatedna",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/candidate_dna.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "candidate_dna_find_similar_candidates",
+      "target": "candidate_dna_generate_candidate_dna",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/candidate_dna.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "candidate_dna_find_similar_candidates",
+      "target": "candidate_dna_calculate_dna_similarity",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/candidate_dna.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "jd_writer_analyze_jd_bias",
+      "target": "jd_writer_jdbiasanalysis",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/jd_writer.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "jd_writer_enhance_jd",
+      "target": "jd_writer_analyze_jd_bias",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/jd_writer.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "jd_writer_enhance_jd",
+      "target": "jd_writer_debias_jd",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/jd_writer.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "signal_detector_detect_candidate_signals",
+      "target": "signal_detector_hiringsignal",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/signal_detector.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "signal_detector_simulate_signal_feed",
+      "target": "signal_detector_detect_candidate_signals",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/signal_detector.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "signal_detector_rank_candidates_by_signal_readiness",
+      "target": "signal_detector_detect_candidate_signals",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/intelligence/signal_detector.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "main_app",
+      "target": "db_init_db",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "main_app",
+      "target": "dashboard_dashboard_page",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "main_app",
+      "target": "hunts_hunts_page",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "main_app",
+      "target": "pipeline_pipeline_page",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "main_app",
+      "target": "candidates_candidates_page",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "main_app",
+      "target": "candidate_detail_candidate_detail_page",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "main_app",
+      "target": "communications_communications_page",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "main_app",
+      "target": "analytics_analytics_page",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "main_app",
+      "target": "settings_settings_page",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/main.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "analytics_analytics_page",
+      "target": "layout_create_layout",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/analytics.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "analytics_analytics_page",
+      "target": "analytics_render_analytics",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/analytics.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "candidate_detail_candidate_detail_page",
+      "target": "layout_create_layout",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/candidate_detail.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "candidate_detail_candidate_detail_page",
+      "target": "candidate_detail_render_candidate_detail",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/candidate_detail.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "candidates_candidates_page",
+      "target": "layout_create_layout",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/candidates.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "candidates_candidates_page",
+      "target": "candidates_render_candidates",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/candidates.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "communications_communications_page",
+      "target": "layout_create_layout",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/communications.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "communications_communications_page",
+      "target": "communications_render_communications",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/communications.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "communications_render_communications",
+      "target": "browser_panel_render_browser_panel",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/communications.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "dashboard_dashboard_page",
+      "target": "layout_create_layout",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/dashboard.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "dashboard_dashboard_page",
+      "target": "dashboard_render_dashboard",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/dashboard.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "hunts_hunts_page",
+      "target": "layout_create_layout",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/hunts.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "hunts_hunts_page",
+      "target": "hunts_render_hunts",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/hunts.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "hunts_render_hunts",
+      "target": "auto_pilot_run_autopilot_hunt_job",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/hunts.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_pipeline_page",
+      "target": "layout_create_layout",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_pipeline_page",
+      "target": "pipeline_render_pipeline",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "settings_settings_page",
+      "target": "layout_create_layout",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/settings.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "settings_settings_page",
+      "target": "settings_render_settings",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/pages/settings.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "layout_create_layout",
+      "target": "copilot_panel_render_copilot_panel",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/layout.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "theme_apply_theme",
+      "target": "theme_get_theme_css",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/theme.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "theme_get_theme_css",
+      "target": "theme_color_schemes",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/ui/theme.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "audio_bridge_websocket_endpoint",
+      "target": "audio_bridge_connection_manager",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/audio_bridge.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "audio_bridge_websocket_endpoint",
+      "target": "pipeline_pipecat_voice_pipeline",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/audio_bridge.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "audio_bridge_websocket_endpoint",
+      "target": "pipeline_process_voice_input",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/audio_bridge.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_pipecat_voice_pipeline",
+      "target": "deepgram_stt_provider",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_pipecat_voice_pipeline",
+      "target": "elevenlabs_tts_provider",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_pipecat_voice_pipeline",
+      "target": "vad_silero_vad",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_process_voice_input",
+      "target": "vad_is_speech",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_process_voice_input",
+      "target": "deepgram_stt_transcribe_audio",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pipeline_process_voice_input",
+      "target": "elevenlabs_tts_generate_speech",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/pipeline.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "vad_is_speech",
+      "target": "vad_calculate_rms",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "app/voice/vad.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pyproject_talenthunt_os",
+      "target": "pyproject_dependencies",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "pyproject.toml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "pyproject_dependencies",
+      "target": "pipeline_pipecat_voice_pipeline",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "source_file": "pyproject.toml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "build_installer_main",
+      "target": "build_installer_check_pyinstaller",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "scripts/build_installer.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "build_installer_main",
+      "target": "build_installer_find_llama_server",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "scripts/build_installer.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "build_installer_main",
+      "target": "build_installer_build_pyinstaller_args",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "scripts/build_installer.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "test_vad_suite",
+      "target": "vad_silero_vad",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_vad.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "test_vad_suite",
+      "target": "vad_is_speech",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_vad.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "test_vad_suite",
+      "target": "vad_calculate_rms",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "tests/test_vad.py",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "frontend_design_rule",
+      "target": "ui_layout_planning_concept",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": ".agents/rules/frontend_design.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "frontend_design_rule",
+      "target": "theme_apply_theme",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "source_file": ".agents/rules/frontend_design.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "ui_ux_directives_rule",
+      "target": "typography_hierarchy_rule",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": ".agents/rules/ui_ux_directives.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "ui_ux_directives_rule",
+      "target": "spatial_8pt_rule",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": ".agents/rules/ui_ux_directives.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "ui_ux_directives_rule",
+      "target": "color_60_30_10_rule",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": ".agents/rules/ui_ux_directives.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "color_60_30_10_rule",
+      "target": "theme_color_schemes",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "source_file": ".agents/rules/ui_ux_directives.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "graphify_skill",
+      "target": "graphify_karpathy_raw_workflow",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": ".agents/skills/graphify/SKILL.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "graphify_skill",
+      "target": "graphify_semantic_extraction",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": ".agents/skills/graphify/SKILL.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "readme_talenthunt_os",
+      "target": "pyproject_talenthunt_os",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "source_file": "README.md",
+      "source_location": null,
+      "weight": 1.0
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

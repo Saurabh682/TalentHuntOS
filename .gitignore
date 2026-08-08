@@ -1,0 +1,32 @@
+# Environments & Keys
+.env
+.env.*
+*.env
+
+# Python Cache & Build
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+
+# Databases & Local Stores
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.json
+
+# Virtual Envs
+.venv/
+venv/
+ENV/
+
+# IDE & OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
