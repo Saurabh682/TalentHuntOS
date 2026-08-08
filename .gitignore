@@ -20,6 +20,10 @@ dist/
 data/*.db
 data/*.json
 
+# Scratch & Cache directories
+graphify-out/
+scratch/
+
 # Virtual Envs
 .venv/
 venv/
