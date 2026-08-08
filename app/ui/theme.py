@@ -1,7 +1,6 @@
 """Dark-mode Modern Ocean theme for TalentHunt OS (design-pack aligned)."""
 
 from nicegui import ui
-from pathlib import Path
 
 COLOR_SCHEMES = {
     "modern_ocean": {
@@ -153,7 +152,7 @@ html, body, #app, #q-app {{
 }}
 
 .th-shell {{
-  min-height: 100vh;
+  /* overridden below in layout stability block */
   background: var(--th-bg);
 }}
 
@@ -168,8 +167,8 @@ html, body, #app, #q-app {{
 }}
 
 .th-main {{
+  /* overridden below in layout stability block */
   background: var(--th-bg);
-  padding: 28px;
 }}
 
 .th-card, .th-panel {{
@@ -473,7 +472,7 @@ html, body, #app, #q-app {{
   line-height: 1.5 !important;
 }}
 
-.text-caption, label, .q-field__label, .th-caption {{
+.text-caption, .th-caption {{
   font-size: 10px !important;
   line-height: 1.5 !important;
   color: #8da2b2 !important;
@@ -493,21 +492,38 @@ button:disabled, .q-btn--disabled, input:disabled {{
   cursor: not-allowed !important;
 }}
 
+/* Let Quasar own floating/stacked labels — do NOT force relative positioning */
 .q-field__label {{
-  position: relative !important;
-  top: 0 !important;
-  transform: none !important;
-  margin-bottom: 6px !important;
-  display: block !important;
+  color: #8da2b2 !important;
 }}
 
 .q-field--outlined .q-field__control {{
   background: #091520 !important;
   border-radius: 8px !important;
+  min-height: 40px !important;
+}}
+
+.q-field--outlined.q-field--dense .q-field__control {{
+  min-height: 36px !important;
 }}
 
 .q-field--outlined .q-field__control:before {{
   border-color: var(--th-border) !important;
+}}
+
+.q-field--outlined .q-field__native,
+.q-field--outlined .q-field__input,
+.q-field--outlined .q-select__dropdown-icon {{
+  color: var(--th-text) !important;
+}}
+
+.q-field--outlined .q-field__marginal {{
+  height: auto !important;
+}}
+
+/* Native selects / placeholders must not collide with values */
+.q-field__native, .q-placeholder {{
+  line-height: 1.4 !important;
 }}
 
 .q-message-text {{
@@ -589,6 +605,116 @@ button:disabled, .q-btn--disabled, input:disabled {{
   border-radius: 4px;
 }}
 
+/* Layout stability — prevent Quasar flex stretch from breaking the shell */
+.th-shell {{
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow: hidden !important;
+}}
+
+.th-sidebar,
+.th-copilot-panel {{
+  flex: 0 0 auto !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  align-self: stretch !important;
+}}
+
+.th-main {{
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  display: block !important;
+  padding: 28px !important;
+  background: var(--th-bg) !important;
+}}
+
+.th-main > * {{
+  flex: none !important;
+  height: auto !important;
+  max-height: none !important;
+  align-self: stretch !important;
+}}
+
+.th-page {{
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  height: auto !important;
+  gap: 0 !important;
+}}
+
+.th-page-header {{
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  height: auto !important;
+  margin-bottom: 22px !important;
+  gap: 20px !important;
+}}
+
+.th-stats-row {{
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  height: auto !important;
+  gap: 13px !important;
+  margin-bottom: 13px !important;
+}}
+
+.th-stat-card {{
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  height: auto !important;
+  align-self: flex-start !important;
+  background: linear-gradient(145deg, #0e1b28, #0a1520) !important;
+  border: 1px solid var(--th-border) !important;
+  border-radius: 13px !important;
+  padding: 16px !important;
+}}
+
+.th-primary-btn,
+.th-teal-btn,
+.th-gold-btn,
+.th-slate-btn,
+.th-amber-btn {{
+  height: 36px !important;
+  min-height: 36px !important;
+  max-height: 40px !important;
+  align-self: flex-start !important;
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}}
+
+.th-copilot-inner {{
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}}
+
+.th-copilot-panel .th-copilot-inner > div:first-child .q-btn {{
+  min-height: 28px !important;
+  height: 28px !important;
+  width: 28px !important;
+}}
+
 @media (max-width: 1050px) {{
   .th-copilot-panel {{ display: none !important; }}
 }}
@@ -606,11 +732,5 @@ def apply_theme(scheme_key: str | None = None):
         CURRENT_THEME_KEY = scheme_key
     ui.dark_mode(True)
     ui.add_head_html(f'<style>{get_theme_css(CURRENT_THEME_KEY)}</style>', shared=True)
-
-    # Also load design-pack stylesheet if present
-    css_path = Path(__file__).resolve().parent / "static" / "styles.css"
-    if css_path.exists():
-        try:
-            ui.add_css(css_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    # NOTE: Do NOT inject the raw design-pack styles.css — generic .btn/.card/.main
+    # selectors collide with Quasar/NiceGUI and stretch the layout.

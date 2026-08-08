@@ -62,4 +62,5 @@ if __name__ in {"__main__", "__mp_main__"}:
         title=settings.app_name,
         dark=True,
         reload=False,
+        storage_secret="talenthunt-os-local-storage",
     )

@@ -36,7 +36,6 @@ def render_dashboard():
 
     stage_counts = funnel.get("stage_counts") or funnel.get("stages") or {}
     if isinstance(stage_counts, list):
-        # Convert list of dicts if needed
         stage_map = {s.get("name", s.get("stage", "")): s.get("count", 0) for s in stage_counts}
     else:
         stage_map = dict(stage_counts)
@@ -51,17 +50,20 @@ def render_dashboard():
     ]
     max_count = max([c for _, c in funnel_stages] + [1])
 
-    with ui.column().classes('w-full gap-0'):
-        # Top header
-        with ui.row().classes('w-full justify-between items-center gap-5 mb-[22px]'):
-            with ui.column().classes('gap-0'):
+    with ui.element('div').classes('th-page'):
+        # Top header — locked height, no flex stretch
+        with ui.element('div').classes('th-page-header'):
+            with ui.element('div'):
                 ui.label('Talent intelligence').classes('th-ey')
                 ui.label('Welcome back, Recruiter').classes('th-title')
                 ui.label("Here's what's happening with your recruitment engine today.").classes('th-muted')
-            ui.button('＋ New Talent Hunt', on_click=lambda: ui.navigate.to('/hunts')).classes('th-primary-btn')
+            ui.button(
+                '＋ New Talent Hunt',
+                on_click=lambda: ui.navigate.to('/hunts'),
+            ).classes('th-primary-btn').style('align-self:flex-start;flex-shrink:0')
 
-        # Stat cards — 5 columns
-        with ui.row().classes('w-full gap-[13px] no-wrap'):
+        # Stat cards — equal width, auto height
+        with ui.element('div').classes('th-stats-row'):
             stats = [
                 ('ACTIVE HUNTS', str(active_hunts), 'Campaigns running'),
                 ('CANDIDATES SOURCED', str(sourced), 'Talent pool size'),
@@ -70,42 +72,59 @@ def render_dashboard():
                 ('NET COST SAVED', _fmt_inr(float(cost_saved) * 1000 if cost_saved < 100 else cost_saved), 'vs cloud AI spend'),
             ]
             for label, num, sub in stats:
-                with ui.element('div').classes('th-card col p-4'):
+                with ui.element('div').classes('th-stat-card'):
                     ui.label(label).classes('th-label')
                     ui.label(num).classes('th-num')
                     ui.label(sub).classes('th-up')
 
-        # Two-column lower section
-        with ui.row().classes('w-full gap-[13px] mt-[13px] no-wrap items-stretch'):
-            # Funnel panel (wide)
-            with ui.element('div').classes('th-panel col grow p-4'):
-                with ui.row().classes('w-full justify-between mb-[14px]'):
-                    ui.label('Talent Sourcing & Recruitment Funnel').classes('text-[13px] font-semibold text-[#edf5f7]')
+        # Lower section: funnel + side panels
+        with ui.element('div').style(
+            'display:flex;flex-direction:row;flex-wrap:nowrap;align-items:flex-start;'
+            'gap:13px;width:100%;height:auto'
+        ):
+            with ui.element('div').classes('th-panel').style('flex:1 1 auto;min-width:0;padding:16px'):
+                with ui.element('div').style(
+                    'display:flex;justify-content:space-between;align-items:center;margin-bottom:14px'
+                ):
+                    ui.label('Talent Sourcing & Recruitment Funnel').style(
+                        'font-size:13px;font-weight:600;color:#edf5f7'
+                    )
                     ui.label('Last 30 Days').classes('th-muted')
 
-                with ui.element('div').classes('th-funnel w-full'):
+                with ui.element('div').classes('th-funnel'):
                     for name, count in funnel_stages:
                         pct = int((count / max_count) * 100) if max_count else 0
                         with ui.element('div').classes('th-funnel-stage'):
-                            ui.label(name).classes('text-[11px] font-semibold text-[#edf5f7]')
-                            ui.label(str(count)).classes('text-[19px] font-bold text-[#edf5f7] my-[7px]')
+                            ui.label(name).style('font-size:11px;font-weight:600;color:#edf5f7')
+                            ui.label(str(count)).style(
+                                'display:block;font-size:19px;font-weight:700;color:#edf5f7;margin:7px 0'
+                            )
                             with ui.element('div').classes('th-bar'):
-                                ui.element('i').classes('th-bar-fill').style(f'width:{pct}%')
+                                ui.element('div').classes('th-bar-fill').style(f'width:{pct}%')
 
                 ui.element('div').classes('th-chart-spark')
 
-            # Right column: donut + insights
-            with ui.column().classes('w-[320px] shrink-0 gap-[13px]'):
-                with ui.element('div').classes('th-panel p-4'):
-                    with ui.row().classes('w-full justify-between mb-[14px]'):
-                        ui.label('Sourcing & Outreach').classes('text-[13px] font-semibold text-[#edf5f7]')
+            with ui.element('div').style(
+                'width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:13px'
+            ):
+                with ui.element('div').classes('th-panel').style('padding:16px'):
+                    with ui.element('div').style(
+                        'display:flex;justify-content:space-between;margin-bottom:14px'
+                    ):
+                        ui.label('Sourcing & Outreach').style(
+                            'font-size:13px;font-weight:600;color:#edf5f7'
+                        )
                         ui.label('This Week').classes('th-muted')
                     ui.element('div').classes('th-donut').props(f'data-center="{sourced}"')
-                    ui.label('● Sourced　 ● Contacted　 ● Interview').classes('th-muted text-center w-full')
+                    ui.label('● Sourced　 ● Contacted　 ● Interview').classes('th-muted').style(
+                        'text-align:center;width:100%'
+                    )
 
-                with ui.element('div').classes('th-panel p-4'):
-                    with ui.row().classes('w-full justify-between mb-[14px]'):
-                        ui.label('AI Insights').classes('text-[13px] font-semibold text-[#edf5f7]')
+                with ui.element('div').classes('th-panel').style('padding:16px'):
+                    with ui.element('div').style(
+                        'display:flex;justify-content:space-between;margin-bottom:14px'
+                    ):
+                        ui.label('AI Insights').style('font-size:13px;font-weight:600;color:#edf5f7')
                         ui.label('Live').classes('th-muted')
 
                     channels = sourcing.get("channels_breakdown") if isinstance(sourcing, dict) else None
@@ -120,8 +139,8 @@ def render_dashboard():
                     ]
                     for title, desc in insights:
                         with ui.element('div').classes('th-insight'):
-                            ui.label(title).classes('text-[12px] font-semibold text-[#edf5f7]')
-                            ui.label(desc).classes('th-muted mt-1')
+                            ui.label(title).style('font-size:12px;font-weight:600;color:#edf5f7')
+                            ui.label(desc).classes('th-muted').style('margin-top:4px;display:block')
 
 
 def dashboard_page():

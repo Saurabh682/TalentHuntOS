@@ -225,18 +225,30 @@ def render_pipeline(hunt_id: int = 1):
             dialog.open()
 
         def open_add_candidate_dialog(h_id):
-            with ui.dialog() as dialog, ui.card().classes('w-full max-w-lg p-6 th-card border border-teal-500/30'):
-                ui.label('Add Candidate to Pipeline').classes('text-xl font-bold text-slate-100 mb-2')
+            with ui.dialog() as dialog, ui.card().classes('w-full max-w-lg p-6 th-card gap-3'):
+                ui.label('Add Candidate to Pipeline').classes('th-title')
 
-                name_in = ui.input('Full Name', placeholder='e.g., Sarah Jenkins').classes('w-full').props('dark outlined dense')
-                title_in = ui.input('Current Title', placeholder='e.g., Senior Backend Engineer').classes('w-full').props('dark outlined dense')
-                company_in = ui.input('Current Company', placeholder='e.g., Tech Corp').classes('w-full').props('dark outlined dense')
-                email_in = ui.input('Email', placeholder='e.g., sarah@example.com').classes('w-full').props('dark outlined dense')
-                score_in = ui.number('AI Match Score (%)', value=88, min=0, max=100).classes('w-full').props('dark outlined dense')
-                summary_in = ui.textarea('AI Match Summary / Notes').classes('w-full').props('dark outlined dense')
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('Full Name').classes('th-caption')
+                    name_in = ui.input(placeholder='e.g., Sarah Jenkins').classes('w-full').props('dark outlined dense')
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('Current Title').classes('th-caption')
+                    title_in = ui.input(placeholder='e.g., Senior Backend Engineer').classes('w-full').props('dark outlined dense')
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('Current Company').classes('th-caption')
+                    company_in = ui.input(placeholder='e.g., Tech Corp').classes('w-full').props('dark outlined dense')
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('Email').classes('th-caption')
+                    email_in = ui.input(placeholder='e.g., sarah@example.com').classes('w-full').props('dark outlined dense')
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('AI Match Score (%)').classes('th-caption')
+                    score_in = ui.number(value=88, min=0, max=100).classes('w-full').props('dark outlined dense')
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('AI Match Summary / Notes').classes('th-caption')
+                    summary_in = ui.textarea(placeholder='Notes…').classes('w-full').props('dark outlined dense')
 
                 with ui.row().classes('w-full justify-end gap-2 mt-4'):
-                    ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400')
+                    ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-[#8195a5]')
                     def save_c():
                         if not name_in.value.strip():
                             ui.notify('Candidate full name is required.', type='negative')
@@ -256,7 +268,7 @@ def render_pipeline(hunt_id: int = 1):
                         dialog.close()
                         refresh_board()
 
-                    ui.button('Add Candidate', icon='check', on_click=save_c).classes('th-teal-btn')
+                    ui.button('Add Candidate', icon='check', on_click=save_c).classes('th-primary-btn')
             dialog.open()
 
         refresh_board()

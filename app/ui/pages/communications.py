@@ -267,27 +267,37 @@ def render_communications():
         pass
 
     def open_log_communication_dialog():
-        with ui.dialog() as dialog, ui.card().classes('w-full max-w-lg p-6 th-card border border-teal-500/30 gap-3'):
-            ui.label('Log / Send Communication').classes('text-xl font-bold text-slate-100')
+        with ui.dialog() as dialog, ui.card().classes('w-full max-w-lg p-6 th-card gap-3'):
+            ui.label('Log / Send Communication').classes('th-title')
 
             with SessionFactory() as db:
                 cands = list_candidates(db)
                 cand_options = {c.id: f"{c.full_name} ({c.email or 'no email'})" for c in cands}
 
-            cand_select = ui.select(cand_options, label='Select Candidate').classes('w-full').props('dark outlined dense')
-            channel_select = ui.select(
-                options=['email', 'linkedin', 'naukri', 'whatsapp', 'phone'],
-                value='email', label='Channel'
-            ).classes('w-full').props('dark outlined dense')
-            dir_select = ui.select(
-                options=['outbound', 'inbound'],
-                value='outbound', label='Direction'
-            ).classes('w-full').props('dark outlined dense')
-            subj_in = ui.input('Subject', placeholder='e.g. Follow-up regarding Senior AI Engineer role').classes('w-full').props('dark outlined dense')
-            body_in = ui.textarea('Message Body', placeholder='Type message content...').classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Select Candidate').classes('th-caption')
+                cand_select = ui.select(cand_options).classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Channel').classes('th-caption')
+                channel_select = ui.select(
+                    options=['email', 'linkedin', 'naukri', 'whatsapp', 'phone'],
+                    value='email',
+                ).classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Direction').classes('th-caption')
+                dir_select = ui.select(
+                    options=['outbound', 'inbound'],
+                    value='outbound',
+                ).classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Subject').classes('th-caption')
+                subj_in = ui.input(placeholder='e.g. Follow-up regarding Senior AI Engineer role').classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Message Body').classes('th-caption')
+                body_in = ui.textarea(placeholder='Type message content...').classes('w-full').props('dark outlined dense')
 
             with ui.row().classes('w-full justify-end gap-2 mt-4'):
-                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400')
+                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-[#8195a5]')
                 def save_log():
                     if not body_in.value.strip():
                         ui.notify('Message body cannot be empty.', type='negative')
@@ -307,26 +317,42 @@ def render_communications():
                             body=body_in.value.strip(),
                             status="sent" if dir_select.value == "outbound" else "received",
                         )
+                        if channel_select.value == "email" and dir_select.value == "outbound" and cand_obj and cand_obj.email:
+                            send_email(
+                                to_address=cand_obj.email,
+                                subject=subj_in.value.strip() or "TalentHunt Outreach",
+                                body_text=body_in.value.strip(),
+                            )
                     ui.notify('Communication logged successfully!', type='positive')
                     dialog.close()
                     refresh_logs()
 
-                ui.button('Save Log', icon='save', on_click=save_log).classes('th-teal-btn')
+                ui.button('Save Log', icon='save', on_click=save_log).classes('th-primary-btn')
         dialog.open()
 
     def open_create_template_dialog():
-        with ui.dialog() as dialog, ui.card().classes('w-full max-w-xl p-6 th-card border border-teal-500/30 gap-3'):
-            ui.label('Create Message Template').classes('text-xl font-bold text-slate-100')
-            ui.label('Use merge tags like {{candidate_name}}, {{job_title}}, {{company}}, {{skills}} for dynamic personalization.').classes('text-xs text-slate-400 mb-1')
+        with ui.dialog() as dialog, ui.card().classes('w-full max-w-xl p-6 th-card gap-3'):
+            ui.label('Create Message Template').classes('th-title')
+            ui.label('Use merge tags like {{candidate_name}}, {{job_title}}, {{company}}, {{skills}}.').classes('th-muted')
 
-            name_in = ui.input('Template Name', placeholder='e.g. Initial AI Researcher Email').classes('w-full').props('dark outlined dense')
-            ch_in = ui.select(['email', 'linkedin', 'naukri', 'whatsapp'], value='email', label='Channel').classes('w-full').props('dark outlined dense')
-            cat_in = ui.input('Category', value='Initial Outreach').classes('w-full').props('dark outlined dense')
-            subj_in = ui.input('Subject', placeholder='Opportunity: {{job_title}} at {{company}}').classes('w-full').props('dark outlined dense')
-            body_in = ui.textarea('Template Body', placeholder='Hi {{candidate_name}}...').classes('w-full h-40').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Template Name').classes('th-caption')
+                name_in = ui.input(placeholder='e.g. Initial AI Researcher Email').classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Channel').classes('th-caption')
+                ch_in = ui.select(['email', 'linkedin', 'naukri', 'whatsapp'], value='email').classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Category').classes('th-caption')
+                cat_in = ui.input(value='Initial Outreach').classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Subject').classes('th-caption')
+                subj_in = ui.input(placeholder='Opportunity: {{job_title}} at {{company}}').classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Template Body').classes('th-caption')
+                body_in = ui.textarea(placeholder='Hi {{candidate_name}}...').classes('w-full h-40').props('dark outlined dense')
 
             with ui.row().classes('w-full justify-end gap-2 mt-4'):
-                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400')
+                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-[#8195a5]')
                 def save_tmpl():
                     if not name_in.value.strip() or not body_in.value.strip():
                         ui.notify('Name and body are required.', type='negative')
@@ -344,26 +370,28 @@ def render_communications():
                     dialog.close()
                     refresh_templates()
 
-                ui.button('Save Template', icon='save', on_click=save_tmpl).classes('th-teal-btn')
+                ui.button('Save Template', icon='save', on_click=save_tmpl).classes('th-primary-btn')
         dialog.open()
 
     def open_template_tester_dialog(tmpl: MessageTemplate):
-        with ui.dialog() as dialog, ui.card().classes('w-full max-w-2xl p-6 th-card border border-indigo-500/40 gap-4'):
-            ui.label(f'Personalization Tester: "{tmpl.name}"').classes('text-xl font-bold text-slate-100')
+        with ui.dialog() as dialog, ui.card().classes('w-full max-w-2xl p-6 th-card gap-4'):
+            ui.label(f'Personalization Tester: "{tmpl.name}"').classes('th-title')
 
             with SessionFactory() as db:
                 cands = list_candidates(db)
                 cand_options = {c.id: f"{c.full_name} ({c.current_title or 'Engineer'})" for c in cands}
 
-            cand_select = ui.select(cand_options, label='Select Candidate to Preview Personalization').classes('w-full').props('dark outlined dense')
-            preview_card = ui.column().classes('w-full p-4 bg-slate-950 border border-teal-900/30 rounded-lg gap-2')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Select Candidate to Preview').classes('th-caption')
+                cand_select = ui.select(cand_options).classes('w-full').props('dark outlined dense')
+            preview_card = ui.column().classes('w-full p-4 bg-[#091520] border border-[#1b3040] rounded-lg gap-2')
 
             def update_preview():
                 preview_card.clear()
                 cid = cand_select.value
                 if not cid:
                     with preview_card:
-                        ui.label('Select a candidate above to generate personalized outreach text.').classes('text-xs text-slate-500 italic')
+                        ui.label('Select a candidate above to generate personalized outreach text.').classes('th-muted')
                     return
 
                 with SessionFactory() as db:
@@ -375,18 +403,18 @@ def render_communications():
                     )
 
                 with preview_card:
-                    ui.label('Rendered Output:').classes('text-xs font-bold text-teal-400')
+                    ui.label('Rendered Output:').classes('th-caption')
                     ui.code(rendered).classes('w-full p-3 text-xs text-slate-200 font-mono')
 
             cand_select.on('update:model-value', update_preview)
 
             with ui.row().classes('w-full justify-end pt-2'):
-                ui.button('Close', on_click=dialog.close).props('flat').classes('text-slate-400 text-xs')
+                ui.button('Close', on_click=dialog.close).props('flat').classes('text-[#8195a5] text-xs')
         dialog.open()
 
     def open_enroll_dialog():
-        with ui.dialog() as dialog, ui.card().classes('w-full max-w-md p-6 th-card border border-teal-500/30 gap-3'):
-            ui.label('Enroll Candidate in Drip Campaign').classes('text-xl font-bold text-slate-100')
+        with ui.dialog() as dialog, ui.card().classes('w-full max-w-md p-6 th-card gap-3'):
+            ui.label('Enroll Candidate in Drip Campaign').classes('th-title')
 
             with SessionFactory() as db:
                 cands = list_candidates(db)
@@ -394,11 +422,15 @@ def render_communications():
                 cand_opts = {c.id: c.full_name for c in cands}
                 seq_opts = {s.id: s.name for s in seqs}
 
-            cand_sel = ui.select(cand_opts, label='Candidate').classes('w-full').props('dark outlined dense')
-            seq_sel = ui.select(seq_opts, label='Drip Sequence').classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Candidate').classes('th-caption')
+                cand_sel = ui.select(cand_opts).classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Drip Sequence').classes('th-caption')
+                seq_sel = ui.select(seq_opts).classes('w-full').props('dark outlined dense')
 
             with ui.row().classes('w-full justify-end gap-2 mt-4'):
-                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400')
+                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-[#8195a5]')
                 def do_enroll():
                     if not cand_sel.value or not seq_sel.value:
                         ui.notify('Please select candidate and sequence.', type='warning')
@@ -409,14 +441,18 @@ def render_communications():
                     dialog.close()
                     refresh_sequences()
 
-                ui.button('Enroll', icon='check', on_click=do_enroll).classes('th-teal-btn')
+                ui.button('Enroll', icon='check', on_click=do_enroll).classes('th-primary-btn')
         dialog.open()
 
     def open_create_sequence_dialog():
         with ui.dialog() as dialog, ui.card().classes('w-full max-w-lg p-6 th-card border border-teal-500/30 gap-3'):
             ui.label('Create Outreach Sequence').classes('text-xl font-bold text-slate-100')
-            name_in = ui.input('Sequence Name', placeholder='e.g., Executive Search Drip').classes('w-full').props('dark outlined dense')
-            desc_in = ui.textarea('Description').classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Sequence Name').classes('th-caption')
+                name_in = ui.input(placeholder='e.g., Executive Search Drip').classes('w-full').props('dark outlined dense')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Description').classes('th-caption')
+                desc_in = ui.textarea(placeholder='Optional description…').classes('w-full').props('dark outlined dense')
 
             with ui.row().classes('w-full justify-end gap-2 mt-4'):
                 ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400')

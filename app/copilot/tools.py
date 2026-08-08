@@ -99,7 +99,13 @@ def start_talent_hunt(job_title: str, skills: Union[str, List[str]], location: s
         try:
             logger.info(f"Virtual Agency [Hunt {hid}]: Spinning up Sourcer & Screener Agents for {role}...")
             # 1. Sourcer Agent (Parallel)
-            queries = [f"site:linkedin.com/in/ \"{role}\" {loc}", f"\"{sk}\" {role} resume {loc}"]
+    queries = [
+            f'site:linkedin.com/in/ "{role}" {loc}',
+            f'site:naukri.com "{role}" {sk}',
+            f'"{sk}" {role} resume {loc}',
+            f'site:linkedin.com/in/ "{role}" India',
+            f'site:naukri.com "{role}" India',
+        ]
             batch_search_the_web.invoke({"queries": queries})
             
             # 2. Screener Agent (Critic)

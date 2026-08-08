@@ -36,7 +36,7 @@ def render_hunts():
                     role_in = ui.input(placeholder='e.g., Spine Animator').classes('w-full').props('dark outlined dense')
                 with ui.column().classes('grow gap-1'):
                     ui.label('Location').classes('th-caption')
-                    loc_in = ui.input(placeholder='e.g., Noida, India').classes('w-full').props('dark outlined dense')
+                    loc_in = ui.input(placeholder='e.g., India', value='India').classes('w-full').props('dark outlined dense')
 
             with ui.row().classes('w-full gap-3'):
                 with ui.column().classes('grow gap-1'):
@@ -60,26 +60,27 @@ def render_hunts():
                     if not title_in.value.strip():
                         ui.notify('Please provide a campaign title', type='negative')
                         return
-                    
-                    cfg = {}
-                    if skills_in.value.strip():
-                        cfg["required_skills"] = skills_in.value.strip()
-                    if exp_in.value.strip():
-                        cfg["min_experience"] = exp_in.value.strip()
 
-                    with SessionFactory() as db:
-                        create_hunt(
-                            db,
+                    try:
+                        from app.hunts.launch import launch_hunt_and_start_sourcing
+                        result = launch_hunt_and_start_sourcing(
                             title=title_in.value.strip(),
                             target_role=role_in.value.strip() or None,
-                            location=loc_in.value.strip() or None,
+                            location=loc_in.value.strip() or None,  # defaults to India
                             salary_range=salary_in.value.strip() or None,
                             description=desc_in.value.strip() or None,
-                            search_config=cfg if cfg else None
+                            required_skills=skills_in.value.strip() or None,
+                            experience=exp_in.value.strip() or None,
                         )
-                    ui.notify('Talent Hunt created successfully!', type='positive')
-                    dialog.close()
-                    render_grid_ref["fn"]()
+                        ui.notify(
+                            f'Hunt launched — Copilot is sourcing LinkedIn + Naukri for {result["location"]}',
+                            type='positive',
+                        )
+                        dialog.close()
+                        # Open pipeline so Copilot remounts on this hunt session and auto-runs sourcing
+                        ui.navigate.to(f'/hunts/{result["hunt_id"]}/pipeline')
+                    except Exception as e:
+                        ui.notify(f'Launch failed: {e}', type='negative')
 
                 ui.button('Launch Hunt →', icon='rocket_launch', on_click=save).classes('th-primary-btn')
         dialog.open()

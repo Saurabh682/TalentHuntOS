@@ -48,23 +48,22 @@ def render_analytics():
                 ui.label('Real-time recruitment funnel, velocity, outreach response and AI cost metrics.').classes('th-muted')
 
             with ui.row().classes('items-center gap-3 flex-wrap'):
-                # Hunt Selector
-                hunt_select = ui.select(
-                    options=hunt_options,
-                    value=state["selected_hunt_id"],
-                    label="Filter Campaign",
-                    on_change=lambda e: update_dashboard(selected_hunt=e.value),
-                ).classes('w-64').props('outlined dense dark stack-label options-dense')
+                with ui.column().classes('gap-1'):
+                    ui.label('Filter campaign').classes('th-caption')
+                    hunt_select = ui.select(
+                        options=hunt_options,
+                        value=state["selected_hunt_id"],
+                        on_change=lambda e: update_dashboard(selected_hunt=e.value),
+                    ).classes('w-64').props('outlined dense dark options-dense')
 
-                # Time Range Selector
-                time_select = ui.select(
-                    options={7: "Last 7 Days", 30: "Last 30 Days", 90: "Last 90 Days"},
-                    value=state["time_range_days"],
-                    label="Time Range",
-                    on_change=lambda e: update_dashboard(days=e.value),
-                ).classes('w-48').props('outlined dense dark stack-label options-dense')
+                with ui.column().classes('gap-1'):
+                    ui.label('Time range').classes('th-caption')
+                    time_select = ui.select(
+                        options={7: "Last 7 Days", 30: "Last 30 Days", 90: "Last 90 Days"},
+                        value=state["time_range_days"],
+                        on_change=lambda e: update_dashboard(days=e.value),
+                    ).classes('w-48').props('outlined dense dark options-dense')
 
-                # Export Actions
                 ui.button('⇩ Export CSV', on_click=lambda: handle_export_csv()).classes('th-slate-btn')
                 ui.button('PDF Report', icon='picture_as_pdf', on_click=lambda: handle_export_pdf()).classes('th-primary-btn')
 

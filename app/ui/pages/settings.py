@@ -27,9 +27,13 @@ def render_settings():
             with ui.column().classes('w-full gap-4'):
                 ui.label('Runs locally on your PC. No paid API required. Connect LM Studio or Ollama.').classes('th-muted')
                 
-                with ui.row().classes('w-full gap-4 items-center'):
-                    host_in = ui.input('Server Host', value=settings.llama_server_host).classes('grow').props('outlined dark dense')
-                    port_in = ui.input('Server Port', value=str(settings.llama_server_port)).classes('w-32').props('outlined dark dense')
+                with ui.row().classes('w-full gap-4 items-end'):
+                    with ui.column().classes('grow gap-1'):
+                        ui.label('Server Host').classes('th-caption')
+                        host_in = ui.input(value=settings.llama_server_host, placeholder='127.0.0.1').classes('w-full').props('outlined dark dense')
+                    with ui.column().classes('w-32 gap-1'):
+                        ui.label('Port').classes('th-caption')
+                        port_in = ui.input(value=str(settings.llama_server_port), placeholder='1234').classes('w-full').props('outlined dark dense')
                     
                     def save_local_config():
                         settings.llama_server_host = host_in.value
@@ -51,10 +55,16 @@ def render_settings():
                 ui.label('Cloud AI API Keys').classes('text-[13px] font-semibold text-[#edf5f7]')
                 ui.label('Optional · Paid').classes('th-muted')
             ui.label('Leave empty to stay fully free with local LLM only.').classes('th-muted mb-3')
-            with ui.column().classes('w-full gap-4'):
-                gemini_in = ui.input('Google Gemini API Key', value=settings.gemini_api_key, password=True).classes('w-full').props('outlined dark')
-                openai_in = ui.input('OpenAI API Key', value=settings.openai_api_key, password=True).classes('w-full').props('outlined dark')
-                anthropic_in = ui.input('Anthropic API Key', value=settings.anthropic_api_key, password=True).classes('w-full').props('outlined dark')
+            with ui.column().classes('w-full gap-3'):
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('Google Gemini API Key').classes('th-caption')
+                    gemini_in = ui.input(value=settings.gemini_api_key, password=True, placeholder='Optional').classes('w-full').props('outlined dark dense')
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('OpenAI API Key').classes('th-caption')
+                    openai_in = ui.input(value=settings.openai_api_key, password=True, placeholder='Optional').classes('w-full').props('outlined dark dense')
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('Anthropic API Key').classes('th-caption')
+                    anthropic_in = ui.input(value=settings.anthropic_api_key, password=True, placeholder='Optional').classes('w-full').props('outlined dark dense')
                 with ui.row().classes('justify-end'):
                     def save_keys():
                         settings.gemini_api_key = gemini_in.value
@@ -76,7 +86,9 @@ def render_settings():
                 apply_theme(e.value)
                 ui.notify(f"Theme switched to: {COLOR_SCHEMES[e.value]['name']}", type='info')
             
-            ui.select(theme_options, value=CURRENT_THEME_KEY, label='Active Color Theme', on_change=change_theme).classes('w-full').props('outlined dark')
+            with ui.column().classes('w-full gap-1'):
+                ui.label('Active Color Theme').classes('th-caption')
+                ui.select(theme_options, value=CURRENT_THEME_KEY, on_change=change_theme).classes('w-full').props('outlined dark dense')
 
 
         # Recommended Local Models Download Arsenal
@@ -152,9 +164,13 @@ def render_settings():
                 ui.label('Voice Engine').classes('text-[13px] font-semibold text-[#edf5f7]')
                 ui.label('Browser Web Speech = Free').classes('text-[#45d6a0] text-[10px]')
             ui.label('Copilot already uses free browser STT/TTS. Deepgram & ElevenLabs below are optional paid.').classes('th-muted mb-3')
-            with ui.column().classes('w-full gap-4'):
-                deepgram_in = ui.input('Deepgram API Key (STT) — Optional Paid', value=settings.deepgram_api_key, password=True).classes('w-full').props('outlined dark')
-                elevenlabs_in = ui.input('ElevenLabs API Key (TTS) — Optional Paid', value=settings.elevenlabs_api_key, password=True).classes('w-full').props('outlined dark')
+            with ui.column().classes('w-full gap-3'):
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('Deepgram API Key (STT) — Optional Paid').classes('th-caption')
+                    deepgram_in = ui.input(value=settings.deepgram_api_key, password=True, placeholder='Optional').classes('w-full').props('outlined dark dense')
+                with ui.column().classes('w-full gap-1'):
+                    ui.label('ElevenLabs API Key (TTS) — Optional Paid').classes('th-caption')
+                    elevenlabs_in = ui.input(value=settings.elevenlabs_api_key, password=True, placeholder='Optional').classes('w-full').props('outlined dark dense')
                 
                 with ui.row().classes('justify-end'):
                     def save_voice_keys():
