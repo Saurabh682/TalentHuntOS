@@ -49,17 +49,17 @@ TalentHunt OS features a custom **Recruiter OS Dark Carbon** design system engin
 
 ```mermaid
 graph TD
-    UI[NiceGUI / FastAPI Web Workspace] --> CoreEngine[AIEngine / Agent Orchestrator]
-    UI --> Kanban[Kanban Pipeline & Hunt Service]
+    UI["NiceGUI / FastAPI Web Workspace"] --> CoreEngine["AIEngine / Agent Orchestrator"]
+    UI --> Kanban["Kanban Pipeline & Hunt Service"]
     
-    CoreEngine --> LLM[Multi-Provider LLM Router<br/>Gemini | OpenAI | Anthropic | Local LM Studio]
-    CoreEngine --> RAG[LlamaIndex + ChromaDB Vector Engine]
-    CoreEngine --> Tools[Agentic Tools<br/>DB Search | Web Scraper | Email Drafter]
+    CoreEngine --> LLM["Multi-Provider LLM Router<br/>Gemini / OpenAI / Anthropic / Local LM Studio"]
+    CoreEngine --> RAG["LlamaIndex + ChromaDB Vector Engine"]
+    CoreEngine --> Tools["Agentic Tools<br/>DB Search / Web Scraper / Email Drafter"]
     
-    Kanban --> DB[(SQLite Database<br/>WAL Mode)]
-    RAG --> VectorStore[(ChromaDB Vector Store)]
+    Kanban --> DB[("SQLite Database<br/>WAL Mode")]
+    RAG --> VectorStore[("ChromaDB Vector Store")]
     
-    UI --> VoiceBridge[Voice Pipeline<br/>Deepgram STT + ElevenLabs TTS]
+    UI --> VoiceBridge["Voice Pipeline<br/>Deepgram STT + ElevenLabs TTS"]
 ```
 
 ---
