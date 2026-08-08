@@ -240,34 +240,33 @@ def render_copilot_panel():
         # 1. Header Bar (Top)
         with ui.row().classes('items-center justify-between w-full mb-3 shrink-0 px-1 flex-nowrap'):
             with ui.row().classes('items-center gap-2 flex-nowrap shrink-0'):
-                ui.icon('smart_toy', color='teal-4')
-                ui.label('Copilot').classes('font-bold text-slate-100 whitespace-nowrap')
+                ui.label('✦ Copilot').classes('font-bold text-[#edf5f7] text-[13px] whitespace-nowrap')
             with ui.row().classes('items-center gap-1 flex-nowrap shrink-0'):
                 ui.button(
-                    icon='open_in_full', color='cyan',
+                    icon='open_in_full',
                     on_click=lambda: ui.run_javascript('toggleCopilotFullscreen();')
-                ).props('flat round dense').tooltip('Expand Copilot Fullscreen')
+                ).props('flat round dense').classes('text-[#8195a5]').tooltip('Expand Copilot Fullscreen')
 
                 ui.button(
                     icon='refresh',
                     on_click=clear_chat
-                ).props('flat round dense').tooltip('Clear Conversation')
+                ).props('flat round dense').classes('text-[#8195a5]').tooltip('Clear Conversation')
 
                 def do_toggle_tts():
                     tts_active["enabled"] = not tts_active["enabled"]
                     ui.run_javascript('toggleTTS();')
-                    tts_btn.props(f'icon={"volume_up" if tts_active["enabled"] else "volume_off"} color={"teal" if tts_active["enabled"] else "slate"}')
+                    tts_btn.props(f'icon={"volume_up" if tts_active["enabled"] else "volume_off"}')
                     ui.notify(f'Voice Reply (TTS) {"Enabled" if tts_active["enabled"] else "Muted"}')
 
                 tts_btn = ui.button(
-                    icon='volume_up', color='teal',
+                    icon='volume_up',
                     on_click=do_toggle_tts
-                ).props('flat round dense').tooltip('Toggle Voice Reply (TTS On/Mute)')
+                ).props('flat round dense').classes('text-[#19d3c5]').tooltip('Toggle Voice Reply (TTS On/Mute)')
 
                 ui.button(
-                    icon='mic', color='amber',
+                    icon='mic',
                     on_click=lambda: ui.run_javascript('toggleFreeVoiceRecording();')
-                ).props('flat round dense').tooltip('Lifetime Free Voice Input (Click to Talk)')
+                ).props('flat round dense').classes('text-[#d8941e]').tooltip('Lifetime Free Voice Input (Click to Talk)')
 
         def on_session_change(e):
             active_session_id["value"] = e.value

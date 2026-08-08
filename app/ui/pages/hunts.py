@@ -21,40 +21,41 @@ def render_hunts():
     render_grid_ref = {"fn": lambda: None}
 
     def open_create_hunt_dialog():
-        with ui.dialog() as dialog, ui.card().classes('w-full max-w-lg p-6 th-card border border-teal-500/30 gap-4'):
-            ui.label('Create New Talent Hunt').classes('th-display text-slate-100')
-            ui.label('Set hunt parameters to launch AI sourcing and candidate matching.').classes('th-caption text-slate-400')
+        with ui.dialog() as dialog, ui.card().classes('w-full max-w-2xl p-6 th-card gap-4'):
+            ui.label('Hunts / Create').classes('th-ey')
+            ui.label('Create New Talent Hunt').classes('th-title')
+            ui.label('Set up a new AI-powered sourcing campaign in a few steps.').classes('th-muted')
 
             with ui.column().classes('w-full gap-1'):
-                ui.label('Hunt Campaign Title').classes('th-caption text-slate-300')
-                title_in = ui.input(placeholder='e.g., Senior Rust Engineer').classes('w-full').props('dark outlined dense')
+                ui.label('Hunt Title').classes('th-caption')
+                title_in = ui.input(placeholder='e.g., Spine Animator Hunt').classes('w-full').props('dark outlined dense')
+
+            with ui.row().classes('w-full gap-3'):
+                with ui.column().classes('grow gap-1'):
+                    ui.label('Role').classes('th-caption')
+                    role_in = ui.input(placeholder='e.g., Spine Animator').classes('w-full').props('dark outlined dense')
+                with ui.column().classes('grow gap-1'):
+                    ui.label('Location').classes('th-caption')
+                    loc_in = ui.input(placeholder='e.g., Noida, India').classes('w-full').props('dark outlined dense')
+
+            with ui.row().classes('w-full gap-3'):
+                with ui.column().classes('grow gap-1'):
+                    ui.label('Experience').classes('th-caption')
+                    exp_in = ui.input(placeholder='e.g., 4–8 years').classes('w-full').props('dark outlined dense')
+                with ui.column().classes('grow gap-1'):
+                    ui.label('Salary Range').classes('th-caption')
+                    salary_in = ui.input(placeholder='e.g., ₹15–25 LPA').classes('w-full').props('dark outlined dense')
 
             with ui.column().classes('w-full gap-1'):
-                ui.label('Target Role').classes('th-caption text-slate-300')
-                role_in = ui.input(placeholder='e.g., Lead Developer').classes('w-full').props('dark outlined dense')
+                ui.label('Required Skills').classes('th-caption')
+                skills_in = ui.input(placeholder='e.g., Spine, 2D Animation, After Effects').classes('w-full').props('dark outlined dense')
 
             with ui.column().classes('w-full gap-1'):
-                ui.label('Location / Remote Policy').classes('th-caption text-slate-300')
-                loc_in = ui.input(placeholder='e.g., Remote (US)').classes('w-full').props('dark outlined dense')
-
-            with ui.column().classes('w-full gap-1'):
-                ui.label('Required Experience').classes('th-caption text-slate-300')
-                exp_in = ui.input(placeholder='e.g., 3-5 years, Senior (5+ yrs)').classes('w-full').props('dark outlined dense')
-
-            with ui.column().classes('w-full gap-1'):
-                ui.label('Salary Range').classes('th-caption text-slate-300')
-                salary_in = ui.input(placeholder='e.g., $140k - $180k').classes('w-full').props('dark outlined dense')
-
-            with ui.column().classes('w-full gap-1'):
-                ui.label('Description').classes('th-caption text-slate-300')
+                ui.label('Role Summary').classes('th-caption')
                 desc_in = ui.textarea(placeholder='Provide job responsibilities...').classes('w-full').props('dark outlined dense')
 
-            with ui.column().classes('w-full gap-1'):
-                ui.label('Required Skills (comma-separated)').classes('th-caption text-slate-300')
-                skills_in = ui.input(placeholder='e.g., Python, Docker, FastAPI').classes('w-full').props('dark outlined dense')
-
             with ui.row().classes('w-full justify-end gap-3 mt-4'):
-                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400')
+                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-[#8195a5]')
                 def save():
                     if not title_in.value.strip():
                         ui.notify('Please provide a campaign title', type='negative')
@@ -80,37 +81,30 @@ def render_hunts():
                     dialog.close()
                     render_grid_ref["fn"]()
 
-                ui.button('Launch Hunt', icon='rocket_launch', on_click=save).classes('th-teal-btn')
+                ui.button('Launch Hunt →', icon='rocket_launch', on_click=save).classes('th-primary-btn')
         dialog.open()
 
-    with ui.column().classes('w-full gap-6'):
+    with ui.column().classes('w-full gap-0'):
         # Header Row
-        with ui.row().classes('w-full justify-between items-center'):
-            with ui.column().classes('gap-1'):
-                ui.label('Talent Hunt Campaigns').classes('text-2xl font-bold text-slate-100')
-                ui.label('Create, monitor, and execute AI-driven sourcing campaigns.').classes('text-sm text-slate-400')
-            
-            ui.button(
-                'New Talent Hunt', icon='add', color='teal',
-                on_click=open_create_hunt_dialog
-            ).classes('th-teal-btn')
+        with ui.row().classes('w-full justify-between items-center gap-5 mb-[22px]'):
+            with ui.column().classes('gap-0'):
+                ui.label('Recruitment campaigns').classes('th-ey')
+                ui.label('Talent Hunts').classes('th-title')
+                ui.label('Create, monitor and execute AI-driven sourcing campaigns.').classes('th-muted')
+            ui.button('＋ New', on_click=open_create_hunt_dialog).classes('th-primary-btn')
 
         # Filter & Search Bar
-        with ui.card().classes('w-full p-4 th-card border border-teal-900/30'):
-            with ui.row().classes('w-full justify-between items-center gap-4'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.label('Filter:').classes('text-sm font-medium text-slate-400 mr-2')
-                    for status_opt in ["All", "Active", "Draft", "Paused", "Completed"]:
-                        ui.button(
-                            status_opt,
-                            on_click=lambda e, s=status_opt: set_filter(s)
-                        ).props('dense flat').classes(
-                            'text-xs px-3 py-1 rounded-full bg-slate-800 text-teal-300'
-                        )
-                
-                search_input = ui.input(placeholder='Search hunts by title or role...').classes('w-64 text-sm').props('dense rounded outlined dark')
+        with ui.row().classes('w-full items-center gap-2 mb-[13px] flex-wrap'):
+            for status_opt in ["All", "Active", "Draft", "Paused", "Completed"]:
+                ui.button(
+                    status_opt,
+                    on_click=lambda e, s=status_opt: set_filter(s)
+                ).props('dense flat no-caps').classes(
+                    'th-tab th-tab-on' if status_opt == 'All' else 'th-tab'
+                )
+            search_input = ui.input(placeholder='Search…').classes('grow text-sm').props('dense rounded outlined dark')
 
-        grid_container = ui.row().classes('w-full gap-6 items-stretch')
+        grid_container = ui.row().classes('w-full gap-[13px] items-stretch')
 
         def render_grid():
             grid_container.clear()
@@ -138,12 +132,12 @@ def render_hunts():
                     for hunt in filtered:
                         metrics = get_hunt_metrics(db, hunt.id)
 
-                        with ui.card().classes('col-12 col-md-6 col-lg-4 p-5 bg-[#121619] border border-[#1E2226] rounded-xl flex flex-col justify-between hover:border-[#3ED9A6]/40 transition-all duration-200'):
+                        with ui.card().classes('col-12 col-md-6 col-lg-4 p-5 th-card flex flex-col justify-between hover:border-[#19d3c5]/50 transition-all duration-200'):
                             with ui.column().classes('w-full gap-2'):
                                 with ui.row().classes('w-full justify-between items-start gap-2'):
-                                    ui.label(hunt.title).classes('text-base font-semibold text-[#E7E9EA] line-clamp-1')
-                                    status_bg = 'bg-[#10241D] text-[#3ED9A6] border border-[#3ED9A6]/30' if hunt.status == 'Active' else 'bg-[#151A1D] text-[#8A9096] border border-[#1E2226]'
-                                    ui.element('span').classes(f'text-[10px] px-2 py-0.5 rounded-md font-medium {status_bg}').text = hunt.status
+                                    ui.label(hunt.title).classes('text-[13px] font-semibold text-[#edf5f7] line-clamp-1')
+                                    status_bg = 'th-pill th-pill-green' if hunt.status == 'Active' else 'th-pill'
+                                    ui.element('span').classes(status_bg).text = hunt.status
 
                                 exp_req = None
                                 required_skills_list = []
@@ -158,76 +152,76 @@ def render_hunts():
                                         required_skills_list = [s.strip() for s in sc.required_skills.split(',') if s.strip()]
 
                                 if hunt.target_role or hunt.location or exp_req:
-                                    with ui.row().classes('items-center gap-3 text-xs text-[#8A9096] flex-wrap'):
+                                    with ui.row().classes('items-center gap-3 text-[11px] text-[#8195a5] flex-wrap'):
                                         if hunt.target_role:
                                             with ui.row().classes('items-center gap-1'):
-                                                ui.icon('work_outline', size='xs').classes('text-[#3ED9A6]')
+                                                ui.icon('work_outline', size='xs').classes('text-[#19d3c5]')
                                                 ui.label(hunt.target_role)
                                         if hunt.location:
                                             with ui.row().classes('items-center gap-1'):
-                                                ui.icon('place', size='xs').classes('text-[#8A9096]')
+                                                ui.icon('place', size='xs').classes('text-[#8195a5]')
                                                 ui.label(hunt.location)
                                         if exp_req:
                                             with ui.row().classes('items-center gap-1'):
-                                                ui.icon('history_edu', size='xs').classes('text-[#8A9096]')
+                                                ui.icon('history_edu', size='xs').classes('text-[#8195a5]')
                                                 ui.label(exp_req)
 
                                 if required_skills_list:
                                     with ui.row().classes('items-center gap-1 mt-1 flex-wrap'):
                                         for sk in required_skills_list[:4]:
-                                            ui.element('span').classes('text-[10px] bg-[#151A1D] text-[#3ED9A6] px-2 py-0.5 border border-[#1E2226] rounded-md').text = sk
+                                            ui.element('span').classes('th-pill').text = sk
 
                                 if hunt.description:
-                                    ui.label(hunt.description).classes('text-xs text-[#8A9096] mt-1 line-clamp-2')
+                                    ui.label(hunt.description).classes('text-[11px] text-[#8195a5] mt-1 line-clamp-2')
 
-                            ui.separator().classes('bg-[#1E2226] my-3')
+                            ui.separator().classes('bg-[#1b3040] my-3')
 
-                            with ui.row().classes('w-full justify-around items-center bg-[#0B0D0F] p-2.5 rounded-lg border border-[#1E2226] mb-4'):
+                            with ui.row().classes('w-full justify-around items-center bg-[#091520] p-2.5 rounded-lg border border-[#1b3040] mb-4'):
                                 with ui.column().classes('items-center gap-0 cursor-pointer hover:opacity-80 transition-opacity').on('click', lambda e: ui.navigate.to('/candidates')):
-                                    ui.label(str(metrics.get("total_candidates", 0))).classes('text-lg font-bold text-[#3ED9A6]')
-                                    ui.label('Candidates').classes('text-[10px] text-[#8A9096]')
+                                    ui.label(str(metrics.get("total_candidates", 0))).classes('text-lg font-bold text-[#19d3c5]')
+                                    ui.label('Candidates').classes('text-[10px] text-[#8195a5]')
                                 
-                                ui.separator().props('vertical').classes('h-8 bg-[#1E2226]')
+                                ui.separator().props('vertical').classes('h-8 bg-[#1b3040]')
 
                                 with ui.column().classes('items-center gap-0'):
                                     raw_sc = metrics.get('avg_match_score', 0)
                                     formatted_sc = f"{raw_sc:.1f}%" if isinstance(raw_sc, (int, float)) else f"{raw_sc}%"
-                                    ui.label(formatted_sc).classes('text-lg font-bold text-[#E7E9EA]')
-                                    ui.label('Avg Match').classes('text-[10px] text-[#8A9096]')
+                                    ui.label(formatted_sc).classes('text-lg font-bold text-[#edf5f7]')
+                                    ui.label('Avg Match').classes('text-[10px] text-[#8195a5]')
 
-                                ui.separator().props('vertical').classes('h-8 bg-[#1E2226]')
+                                ui.separator().props('vertical').classes('h-8 bg-[#1b3040]')
 
                                 with ui.column().classes('items-center gap-0'):
-                                    ui.label(str(metrics.get("hired_count", 0))).classes('text-lg font-bold text-[#3ED9A6]')
-                                    ui.label('Hired').classes('text-[10px] text-[#8A9096]')
+                                    ui.label(str(metrics.get("hired_count", 0))).classes('text-lg font-bold text-[#19d3c5]')
+                                    ui.label('Hired').classes('text-[10px] text-[#8195a5]')
 
                             with ui.column().classes('w-full gap-2 mt-auto pt-2'):
                                 ui.button(
-                                    'Pipeline Kanban', icon='view_kanban',
+                                    'Open', icon='view_kanban',
                                     on_click=lambda e, hid=hunt.id: ui.navigate.to(f'/hunts/{hid}/pipeline')
-                                ).classes('w-full th-teal-btn text-xs py-2 rounded-lg font-medium')
+                                ).classes('w-full th-primary-btn text-xs')
 
                                 with ui.row().classes('w-full justify-between items-center px-1 pt-1'):
                                     ui.button(
                                         icon='edit',
                                         on_click=lambda e, h=hunt: open_edit_hunt_dialog(h)
-                                    ).props('flat round dense').classes('text-[#8A9096] hover:text-[#3ED9A6]').tooltip('Edit Campaign')
+                                    ).props('flat round dense').classes('text-[#8195a5] hover:text-[#19d3c5]').tooltip('Edit Campaign')
 
                                     ui.button(
                                         icon='auto_awesome',
                                         on_click=lambda e, hid=hunt.id, t=hunt.title: trigger_ai_sourcing(hid, t)
-                                    ).props('flat round dense').classes('text-[#8A9096] hover:text-[#3ED9A6]').tooltip('AI Auto-Pilot Sourcing')
+                                    ).props('flat round dense').classes('text-[#8195a5] hover:text-[#19d3c5]').tooltip('AI Auto-Pilot Sourcing')
 
                                     toggle_icon = 'pause' if hunt.status == 'Active' else 'play_arrow'
                                     ui.button(
                                         icon=toggle_icon,
                                         on_click=lambda e, hid=hunt.id, st=hunt.status: toggle_hunt_status(hid, st)
-                                    ).props('flat round dense').classes('text-[#8A9096] hover:text-[#EDEFEF]').tooltip('Pause / Resume Campaign')
+                                    ).props('flat round dense').classes('text-[#8195a5] hover:text-[#edf5f7]').tooltip('Pause / Resume Campaign')
 
                                     ui.button(
                                         icon='delete_outline',
                                         on_click=lambda e, hid=hunt.id, t=hunt.title: confirm_delete_hunt(hid, t)
-                                    ).props('flat round dense').classes('text-[#8A9096] hover:text-red-400').tooltip('Delete Talent Hunt')
+                                    ).props('flat round dense').classes('text-[#8195a5] hover:text-red-400').tooltip('Delete Talent Hunt')
 
         render_grid_ref["fn"] = render_grid
 

@@ -38,26 +38,27 @@ def render_communications():
 
     selected_channel_filter = {"value": "All"}
     
-    with ui.column().classes('w-full gap-6'):
+    with ui.column().classes('w-full gap-0'):
         # Page Title Header
-        with ui.row().classes('w-full justify-between items-center'):
-            with ui.column().classes('gap-1'):
-                ui.label('Communication Hub & Outreach Engine').classes('text-2xl font-bold text-slate-100')
-                ui.label('Multi-channel candidate messaging (Email, LinkedIn, Naukri), templates, drip sequences, & browser sourcing.').classes('text-sm text-slate-400')
+        with ui.row().classes('w-full justify-between items-center gap-5 mb-[22px]'):
+            with ui.column().classes('gap-0'):
+                ui.label('Outreach engine').classes('th-ey')
+                ui.label('Communication Hub').classes('th-title')
+                ui.label('Multi-channel candidate messaging, templates and automated sequences.').classes('th-muted')
 
             with ui.row().classes('items-center gap-3'):
                 ui.button(
-                    'Run Drip Step Engine', icon='bolt', color='amber',
+                    '⚡ Run Drip Engine',
                     on_click=lambda: run_drip_engine()
-                ).classes('bg-amber-600 hover:bg-amber-500 text-slate-900 font-bold px-4 py-2 rounded-lg text-sm')
+                ).classes('th-amber-btn')
 
                 ui.button(
-                    'Log Communication', icon='add_comment', color='teal',
+                    'Log Communication', icon='add_comment',
                     on_click=lambda: open_log_communication_dialog()
-                ).classes('th-teal-btn')
+                ).classes('th-primary-btn')
 
         # Navigation Tabs for Sections
-        with ui.tabs().classes('w-full text-teal-400 border-b border-teal-900/30') as comm_tabs:
+        with ui.tabs().classes('w-full text-[#19d3c5] border-b border-[#1b3040]') as comm_tabs:
             tab_logs = ui.tab('Communication Logs', icon='forum')
             tab_templates = ui.tab('Message Templates', icon='description')
             tab_sequences = ui.tab('Outreach Sequences (Drip)', icon='auto_mode')

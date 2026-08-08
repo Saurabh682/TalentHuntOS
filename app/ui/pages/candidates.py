@@ -130,48 +130,40 @@ def render_candidates():
                 ui.button('Save Candidate', icon='save', on_click=save).classes('th-teal-btn')
         dialog.open()
 
-    with ui.column().classes('w-full gap-6'):
+    with ui.column().classes('w-full gap-0'):
         # Page Title Header
-        with ui.row().classes('w-full justify-between items-center'):
-            with ui.column().classes('gap-1'):
-                ui.label('Candidate Database & CRM').classes('text-2xl font-bold text-slate-100')
-                ui.label('Global talent database with ChromaDB FastEmbed vector search & LlamaIndex RAG Q&A.').classes('text-sm text-slate-400')
+        with ui.row().classes('w-full justify-between items-center gap-5 mb-[22px]'):
+            with ui.column().classes('gap-0'):
+                ui.label('Talent intelligence').classes('th-ey')
+                ui.label('Candidate Database').classes('th-title')
+                ui.label('Search, score and manage your global talent pool.').classes('th-muted')
 
             with ui.row().classes('items-center gap-3'):
                 ui.button(
-                    'LlamaIndex Q&A', icon='psychology', color='indigo',
+                    'LlamaIndex Q&A', icon='psychology',
                     on_click=open_rag_qa_dialog
-                ).classes('bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-4 py-2 rounded-lg text-sm')
+                ).classes('th-slate-btn')
 
                 ui.button(
-                    'Add Candidate', icon='person_add', color='teal',
+                    '＋ New',
                     on_click=open_create_candidate_dialog
-                ).classes('th-teal-btn')
+                ).classes('th-primary-btn')
 
         # Filter & Dual Search Control Card
-        with ui.card().classes('w-full p-4 th-card border border-teal-900/30 gap-4'):
-            with ui.row().classes('w-full justify-between items-center flex-wrap gap-4'):
-                # Left side: Mode toggle & Status filters
-                with ui.row().classes('items-center gap-3 flex-wrap'):
-                    ui.label('Search Mode:').classes('text-xs font-semibold text-teal-400')
-                    mode_toggle = ui.toggle(
-                        options={'keyword': 'Keyword Filter', 'vector': 'Vector Similarity (FastEmbed)'},
-                        value='keyword',
-                        on_change=lambda e: set_search_mode(e.value)
-                    ).props('dense dark').classes('text-xs')
-
-                    ui.separator().props('vertical').classes('h-6 bg-teal-900/40')
-
-                    ui.label('Status:').classes('text-xs text-slate-400')
-                    for st in ["All", "Active", "Passive", "Placed", "Archived"]:
-                        ui.button(
-                            st, on_click=lambda e, s=st: set_status_filter(s)
-                        ).props('dense flat').classes('text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 hover:text-teal-400')
-
-                # Right side: Search Input Box
-                search_input = ui.input(
-                    placeholder='Search candidates by keyword...'
-                ).classes('grow max-w-md text-sm').props('dense dark outlined rounded')
+        with ui.row().classes('w-full items-center gap-2 mb-[13px] flex-wrap'):
+            ui.button('All', on_click=lambda: set_status_filter('All')).props('dense flat no-caps').classes('th-tab th-tab-on')
+            mode_toggle = ui.toggle(
+                options={'keyword': 'Keyword', 'vector': 'Vector'},
+                value='keyword',
+                on_change=lambda e: set_search_mode(e.value)
+            ).props('dense dark').classes('text-xs')
+            for st in ["Active", "Passive", "Placed", "Archived"]:
+                ui.button(
+                    st, on_click=lambda e, s=st: set_status_filter(s)
+                ).props('dense flat no-caps').classes('th-tab')
+            search_input = ui.input(
+                placeholder='Search…'
+            ).classes('grow text-sm').props('dense dark outlined rounded')
 
         # Semantic Search Banner / Info when vector mode is selected
         search_banner = ui.element('div').classes('w-full')

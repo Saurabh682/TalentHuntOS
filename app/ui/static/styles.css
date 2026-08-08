@@ -1,0 +1,71 @@
+/* TalentHunt OS — Modern Ocean UI (from design pack) */
+*{box-sizing:border-box}
+body{margin:0;background:#071019;color:#edf5f7;font:13px Inter,system-ui,sans-serif}
+a{text-decoration:none;color:inherit}
+.app{display:grid;grid-template-columns:220px 1fr 285px;min-height:100vh}
+.side,.right{background:#08121d;border-color:#1b3040}
+.side{border-right:1px solid #1b3040;padding:22px 15px}
+.brand{font-weight:800;font-size:15px;padding:8px 10px 28px}
+.brand small{display:block;color:#19d3c5;font-weight:500;margin-top:4px}
+.nav a{display:block;padding:11px 13px;color:#8ea4b4;border-radius:9px;margin:3px 0}
+.nav a:hover,.nav .on{background:#123542;color:#fff}
+.engine{position:fixed;bottom:18px;width:188px;border:1px solid #1b3040;border-radius:10px;padding:12px;color:#8296a7}
+.engine b{float:right;color:#19d3c5}
+.main{padding:28px;overflow:auto}
+.right{border-left:1px solid #1b3040;padding:16px}
+.chat{height:calc(100vh - 100px);border:1px solid #1b3040;border-radius:12px;background:#0b1724;padding:15px}
+.bubble{margin:20px 0 0 20px;background:#152738;border:1px solid #285166;border-radius:12px;padding:13px;line-height:1.5}
+.top{display:flex;justify-content:space-between;gap:20px;align-items:center;margin-bottom:22px}
+.ey{color:#19d3c5;font-size:10px;text-transform:uppercase;letter-spacing:.14em}
+.title{font-size:25px;font-weight:750;margin:5px 0}
+.muted{color:#8195a5;font-size:11px}
+.btn{display:inline-block;padding:10px 14px;border:1px solid #1d3445;border-radius:9px;background:#0d1b28;color:#dce7eb;font-weight:650;font-size:11px}
+.primary{background:#10a99f;border-color:#19d3c5}
+.gold{background:#d8941e;color:#071019}
+.grid{display:grid;gap:13px}
+.stats{grid-template-columns:repeat(5,1fr)}
+.card,.panel{background:linear-gradient(145deg,#0e1b28,#0a1520);border:1px solid #1b3040;border-radius:13px;padding:16px}
+.label{color:#8296a7;font-size:10px}
+.num{font-size:25px;margin:8px 0}
+.up{color:#45d6a0;font-size:10px}
+.two{grid-template-columns:1.5fr 1fr;margin-top:13px}
+.wide{grid-column:1/-1}
+.head{display:flex;justify-content:space-between;margin-bottom:14px}
+.head b{font-size:13px}
+.funnel{display:grid;grid-template-columns:repeat(6,1fr);background:#09131d;border:1px solid #1a2d3c;border-radius:9px}
+.stage{padding:13px;border-right:1px solid #1a2d3c}
+.stage:last-child{border:0}
+.stage strong{display:block;font-size:19px;margin:7px 0}
+.bar{height:4px;background:#263746;border-radius:4px}
+.bar i{display:block;height:100%;background:#19d3c5;border-radius:4px}
+.chart{height:115px;margin-top:10px;background:linear-gradient(180deg,#19d3c515,transparent);clip-path:polygon(0 80%,8% 62%,16% 72%,25% 48%,34% 58%,44% 35%,54% 52%,63% 25%,72% 41%,82% 20%,91% 33%,100% 12%,100% 100%,0 100%);border-bottom:2px solid #19d3c5}
+.donut{width:125px;height:125px;margin:10px auto;border-radius:50%;background:conic-gradient(#19d3c5 0 50%,#5b8cff 50% 76%,#9a6cff 76% 92%,#50647a 92%);position:relative}
+.donut:after{content:attr(data-center);position:absolute;inset:27px;border-radius:50%;background:#0d1824;display:grid;place-items:center;font-size:23px}
+.insight,.rowcard{border:1px solid #1b3040;border-radius:9px;padding:11px;margin:7px 0}
+.insight small{display:block;color:#8195a5;margin-top:4px}
+.toolbar{display:flex;gap:7px;margin-bottom:13px}
+.search{flex:1;padding:11px;border:1px solid #1b3040;border-radius:9px;background:#091521;color:#8195a5}
+.tab{padding:9px 11px;background:#0e1c29;border-radius:8px;color:#8ea4b4}
+.tab.on{background:#16434a;color:#bffff8}
+.table{width:100%;border-collapse:collapse}
+.table th{font-size:9px;color:#8195a5;text-align:left;padding:10px;border-bottom:1px solid #1b3040}
+.table td{padding:12px 10px;border-bottom:1px solid #152734;font-size:11px}
+.pill{padding:4px 7px;border-radius:6px;background:#173342;color:#8de8df;font-size:9px}
+.green{background:#12382f;color:#74e3b0}
+.kanban{display:grid;grid-template-columns:repeat(6,1fr);gap:9px;min-width:900px}
+.col{background:#091520;border:1px solid #1b3040;border-radius:11px;padding:10px;min-height:500px}
+.candidate{background:#0f1d2b;border:1px solid #1b3040;border-radius:8px;padding:10px;margin:8px 0}
+.avatar{display:inline-grid;place-items:center;width:27px;height:27px;border-radius:50%;background:linear-gradient(135deg,#19cbbd,#536cff);font-size:10px;margin-right:7px}
+.candidate b{font-size:10px}
+.candidate small{display:block;color:#8195a5;margin:4px 0}
+.form{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.field label{display:block;color:#8da2b2;font-size:10px;margin-bottom:6px}
+.input{padding:11px;border:1px solid #1b3040;border-radius:8px;background:#091520;color:#dce7eb}
+.full{grid-column:1/-1}
+.settings{display:flex;gap:7px;border-bottom:1px solid #1b3040;padding-bottom:10px;margin-bottom:15px}
+.settings span{padding:8px;color:#8da2b2}
+.settings .on{background:#123e43;color:#8de8df;border-radius:7px}
+.provider{display:flex;justify-content:space-between;align-items:center;border:1px solid #1b3040;border-radius:9px;padding:13px;margin:7px 0}
+.ok{color:#45d6a0;font-size:10px}
+@media(max-width:1050px){.app{grid-template-columns:200px 1fr}.right{display:none}.stats{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.app{grid-template-columns:1fr}.side{display:none}.main{padding:17px}.stats,.two,.form{grid-template-columns:1fr}.funnel{grid-template-columns:repeat(3,1fr)}}

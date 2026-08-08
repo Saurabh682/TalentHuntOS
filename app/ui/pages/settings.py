@@ -5,52 +5,27 @@ from app.ui.layout import create_layout
 from app.config.settings import settings
 
 def render_settings():
-    """Render the configuration settings page."""
-    with ui.column().classes('w-full gap-6 max-w-4xl'):
-        with ui.column().classes('gap-1'):
-            ui.label('Settings & Configuration').classes('text-2xl font-bold text-slate-100')
-            ui.label('Manage AI provider keys, local model configurations, and system feature flags.').classes('text-sm text-slate-400')
-        
-        # Cloud AI Providers
-        with ui.card().classes('w-full p-5 th-card'):
-            ui.label('Cloud AI Providers').classes('text-lg font-semibold text-teal-400 mb-4')
-            with ui.column().classes('w-full gap-4'):
-                gemini_in = ui.input('Google Gemini API Key', value=settings.gemini_api_key, password=True).classes('w-full').props('outlined dark')
-                openai_in = ui.input('OpenAI API Key', value=settings.openai_api_key, password=True).classes('w-full').props('outlined dark')
-                anthropic_in = ui.input('Anthropic API Key', value=settings.anthropic_api_key, password=True).classes('w-full').props('outlined dark')
-                with ui.row().classes('justify-end'):
-                    def save_keys():
-                        settings.gemini_api_key = gemini_in.value
-                        settings.openai_api_key = openai_in.value
-                        settings.anthropic_api_key = anthropic_in.value
-                        ui.notify('Settings saved', type='positive')
-                    ui.button('Save API Keys', icon='save', color='teal', on_click=save_keys).classes('th-teal-btn')
+    """Render the configuration settings page — Modern Ocean design."""
+    with ui.column().classes('w-full gap-0 max-w-4xl'):
+        with ui.column().classes('gap-0 mb-[22px]'):
+            ui.label('System configuration').classes('th-ey')
+            ui.label('Settings & Configuration').classes('th-title')
+            ui.label('Manage AI providers, integrations, security and application preferences.').classes('th-muted')
 
-        # UI Color Theme Selector
-        with ui.card().classes('w-full p-5 th-card'):
+        # Settings tabs strip (visual)
+        with ui.row().classes('w-full gap-2 border-b border-[#1b3040] pb-[10px] mb-[15px] flex-wrap'):
+            ui.element('span').classes('px-2 py-2 rounded-[7px] bg-[#123e43] text-[#8de8df] text-[11px]').text = 'AI Providers'
+            for label in ['General', 'Integrations', 'Team', 'Security']:
+                ui.element('span').classes('px-2 py-2 text-[#8da2b2] text-[11px]').text = label
+
+        # Local AI first (free path)
+        with ui.card().classes('w-full p-5 th-card mb-[13px]'):
             with ui.row().classes('items-center justify-between w-full mb-3'):
-                ui.label('UI Appearance & Color Palette').classes('text-lg font-semibold text-purple-400')
-                ui.badge('4 Themes Available', color='purple').classes('text-xs')
-            
-            ui.label('Select your preferred app theme & color scheme.').classes('text-xs text-slate-400 mb-3')
-            
-            from app.ui.theme import COLOR_SCHEMES, apply_theme, CURRENT_THEME_KEY
-            theme_options = {k: v["name"] for k, v in COLOR_SCHEMES.items()}
-            
-            def change_theme(e):
-                apply_theme(e.value)
-                ui.notify(f"Theme switched to: {COLOR_SCHEMES[e.value]['name']}", type='info')
-            
-            ui.select(theme_options, value=CURRENT_THEME_KEY, label='Active Color Theme', on_change=change_theme).classes('w-full').props('outlined dark')
-        
-        # Local AI Settings & LM Studio Connection
-        with ui.card().classes('w-full p-5 th-card'):
-            with ui.row().classes('items-center justify-between w-full mb-3'):
-                ui.label('Local AI Server (LM Studio / llama-server)').classes('text-lg font-semibold text-amber-400')
-                ui.badge('OpenAI Compatible', color='amber').classes('text-xs')
+                ui.label('Local LLM / LM Studio').classes('text-[13px] font-semibold text-[#edf5f7]')
+                ui.label('● Preferred (Free)').classes('text-[#45d6a0] text-[10px]')
             
             with ui.column().classes('w-full gap-4'):
-                ui.label('LM Studio runs locally on your PC. TalentHunt OS automatically connects to whatever model is currently loaded in LM Studio.').classes('text-xs text-slate-300')
+                ui.label('Runs locally on your PC. No paid API required. Connect LM Studio or Ollama.').classes('th-muted')
                 
                 with ui.row().classes('w-full gap-4 items-center'):
                     host_in = ui.input('Server Host', value=settings.llama_server_host).classes('grow').props('outlined dark dense')
@@ -64,11 +39,45 @@ def render_settings():
                             pass
                         ui.notify('Local server configuration saved', type='positive')
 
-                    ui.button('Save Port', icon='save', color='amber', on_click=save_local_config).props('dense').classes('th-gold-btn')
+                    ui.button('Save', icon='save', on_click=save_local_config).classes('th-primary-btn')
                 
                 with ui.row().classes('items-center justify-between w-full pt-2'):
-                    ui.label('Enable Local AI Fallback').classes('text-sm text-slate-300')
+                    ui.label('Enable Local AI Fallback').classes('text-[12px] text-[#edf5f7]')
                     ui.switch(value=settings.enable_local_ai, on_change=lambda e: setattr(settings, 'enable_local_ai', e.value))
+
+        # Optional cloud keys (paid — demoted)
+        with ui.card().classes('w-full p-5 th-card mb-[13px]'):
+            with ui.row().classes('items-center justify-between w-full mb-2'):
+                ui.label('Cloud AI API Keys').classes('text-[13px] font-semibold text-[#edf5f7]')
+                ui.label('Optional · Paid').classes('th-muted')
+            ui.label('Leave empty to stay fully free with local LLM only.').classes('th-muted mb-3')
+            with ui.column().classes('w-full gap-4'):
+                gemini_in = ui.input('Google Gemini API Key', value=settings.gemini_api_key, password=True).classes('w-full').props('outlined dark')
+                openai_in = ui.input('OpenAI API Key', value=settings.openai_api_key, password=True).classes('w-full').props('outlined dark')
+                anthropic_in = ui.input('Anthropic API Key', value=settings.anthropic_api_key, password=True).classes('w-full').props('outlined dark')
+                with ui.row().classes('justify-end'):
+                    def save_keys():
+                        settings.gemini_api_key = gemini_in.value
+                        settings.openai_api_key = openai_in.value
+                        settings.anthropic_api_key = anthropic_in.value
+                        ui.notify('Settings saved', type='positive')
+                    ui.button('Save API Keys', icon='save', on_click=save_keys).classes('th-slate-btn')
+
+        # UI Color Theme Selector
+        with ui.card().classes('w-full p-5 th-card mb-[13px]'):
+            with ui.row().classes('items-center justify-between w-full mb-3'):
+                ui.label('Appearance').classes('text-[13px] font-semibold text-[#edf5f7]')
+                ui.label('Modern Ocean default').classes('th-muted')
+            
+            from app.ui.theme import COLOR_SCHEMES, apply_theme, CURRENT_THEME_KEY
+            theme_options = {k: v["name"] for k, v in COLOR_SCHEMES.items()}
+            
+            def change_theme(e):
+                apply_theme(e.value)
+                ui.notify(f"Theme switched to: {COLOR_SCHEMES[e.value]['name']}", type='info')
+            
+            ui.select(theme_options, value=CURRENT_THEME_KEY, label='Active Color Theme', on_change=change_theme).classes('w-full').props('outlined dark')
+
 
         # Recommended Local Models Download Arsenal
         with ui.card().classes('w-full p-5 th-card'):
@@ -137,12 +146,15 @@ def render_settings():
                             'text-xs font-bold text-teal-300 hover:text-lime-400 px-3 py-1.5 border border-teal-800/40 rounded hover:bg-teal-900/30 transition-all'
                         )
         
-        # Voice Engine Settings
-        with ui.card().classes('w-full p-5 th-card'):
-            ui.label('Voice Engine (Deepgram & ElevenLabs)').classes('text-lg font-semibold text-slate-200 mb-4')
+        # Voice — free browser path primary
+        with ui.card().classes('w-full p-5 th-card mt-[13px]'):
+            with ui.row().classes('items-center justify-between w-full mb-2'):
+                ui.label('Voice Engine').classes('text-[13px] font-semibold text-[#edf5f7]')
+                ui.label('Browser Web Speech = Free').classes('text-[#45d6a0] text-[10px]')
+            ui.label('Copilot already uses free browser STT/TTS. Deepgram & ElevenLabs below are optional paid.').classes('th-muted mb-3')
             with ui.column().classes('w-full gap-4'):
-                deepgram_in = ui.input('Deepgram API Key (STT)', value=settings.deepgram_api_key, password=True).classes('w-full').props('outlined dark')
-                elevenlabs_in = ui.input('ElevenLabs API Key (TTS)', value=settings.elevenlabs_api_key, password=True).classes('w-full').props('outlined dark')
+                deepgram_in = ui.input('Deepgram API Key (STT) — Optional Paid', value=settings.deepgram_api_key, password=True).classes('w-full').props('outlined dark')
+                elevenlabs_in = ui.input('ElevenLabs API Key (TTS) — Optional Paid', value=settings.elevenlabs_api_key, password=True).classes('w-full').props('outlined dark')
                 
                 with ui.row().classes('justify-end'):
                     def save_voice_keys():
@@ -150,7 +162,7 @@ def render_settings():
                         settings.elevenlabs_api_key = elevenlabs_in.value
                         ui.notify('Voice engine keys saved', type='positive')
                     
-                    ui.button('Save Voice Keys', icon='save', color='teal', on_click=save_voice_keys).classes('th-teal-btn')
+                    ui.button('Save Voice Keys', icon='save', on_click=save_voice_keys).classes('th-slate-btn')
 
 def settings_page():
     create_layout(render_settings)

@@ -27,16 +27,17 @@ def render_pipeline(hunt_id: int = 1):
         pipeline_data = get_pipeline_data(db, current_hunt_id)
         hunt_options = {h.id: h.title for h in hunts_list}
 
-    with ui.column().classes('w-full gap-6'):
+    with ui.column().classes('w-full gap-0'):
         # Header Row
-        with ui.row().classes('w-full justify-between items-center'):
+        hunt_title = pipeline_data.get("hunt_title", "Talent Pipeline")
+        role_sub = f"{pipeline_data.get('target_role', 'N/A')} · {pipeline_data.get('total_candidates', 0)} candidates"
+        with ui.row().classes('w-full justify-between items-center gap-5 mb-[22px]'):
             with ui.row().classes('items-center gap-3'):
-                ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/hunts')).props('flat round dense').classes('text-slate-300')
+                ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/hunts')).props('flat round dense').classes('text-[#8195a5]')
                 with ui.column().classes('gap-0'):
-                    hunt_title = pipeline_data.get("hunt_title", "Talent Pipeline")
-                    ui.label(hunt_title).classes('text-2xl font-bold text-slate-100')
-                    role_sub = f"Target Role: {pipeline_data.get('target_role', 'N/A')} | Total Candidates: {pipeline_data.get('total_candidates', 0)}"
-                    ui.label(role_sub).classes('text-xs text-slate-400')
+                    ui.label('Hunts / Pipeline').classes('th-ey')
+                    ui.label(hunt_title).classes('th-title')
+                    ui.label(role_sub).classes('th-muted')
 
             with ui.row().classes('items-center gap-2'):
                 ui.select(
@@ -45,10 +46,10 @@ def render_pipeline(hunt_id: int = 1):
                     on_change=lambda e: ui.navigate.to(f'/hunts/{e.value}/pipeline')
                 ).props('dense outlined dark').classes('w-64 text-xs')
 
-                ui.button('Add Candidate', icon='person_add', color='teal', on_click=lambda: open_add_candidate_dialog(current_hunt_id)).classes('th-teal-btn')
+                ui.button('＋ Add Candidate', on_click=lambda: open_add_candidate_dialog(current_hunt_id)).classes('th-primary-btn')
 
         # Kanban Board Area
-        board_container = ui.row().classes('w-full overflow-x-auto gap-4 no-wrap pb-6 items-start min-h-[650px]')
+        board_container = ui.row().classes('w-full overflow-x-auto gap-[9px] no-wrap pb-6 items-start min-h-[650px]')
 
         def refresh_board():
             board_container.clear()
@@ -64,13 +65,13 @@ def render_pipeline(hunt_id: int = 1):
                         st_color = stage["color"]
                         candidates = stage["candidates"]
 
-                        with ui.column().classes('w-72 shrink-0 p-3 th-card rounded-xl border border-teal-900/30 gap-3 min-h-[550px] bg-slate-900/40') as col:
+                        with ui.column().classes('w-72 shrink-0 th-kanban-col gap-2') as col:
                             # Column Header
-                            with ui.row().classes('w-full justify-between items-center px-1 pb-2 border-b border-teal-900/30'):
+                            with ui.row().classes('w-full justify-between items-center px-1 pb-2'):
                                 with ui.row().classes('items-center gap-2'):
-                                    ui.element('div').classes('w-3 h-3 rounded-full').style(f'background-color: {st_color};')
-                                    ui.label(st_name).classes('font-bold text-sm text-slate-200')
-                                ui.badge(str(len(candidates)), color='blue-grey').classes('text-xs text-teal-400 font-semibold px-2 py-0.5')
+                                    ui.element('div').classes('w-2 h-2 rounded-full').style(f'background-color: {st_color};')
+                                    ui.label(st_name.upper()).classes('th-muted font-semibold tracking-wide')
+                                ui.element('span').classes('th-pill').text = str(len(candidates))
 
                             def handle_drop(e, target_st_id=st_id):
                                 dragged_candidate_id_str = e.args[0]
@@ -109,47 +110,47 @@ def render_pipeline(hunt_id: int = 1):
                                         "github_url": c.github_url,
                                     }
 
-                                    with ui.card().classes('w-full p-3 th-card-inner border border-teal-900/20 hover:border-teal-400/50 transition-all cursor-pointer gap-2') as card:
+                                    with ui.card().classes('w-full th-candidate-card hover:border-[#19d3c5]/50 transition-all cursor-pointer gap-2') as card:
                                         card.props('draggable=true')
                                         card.on('dragstart', js_handler=f'(e) => e.dataTransfer.setData("text/plain", "{c_id}")')
 
                                         with ui.row().classes('w-full justify-between items-start gap-1').on('click', lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc)):
                                             with ui.row().classes('items-center gap-2'):
-                                                ui.icon('account_circle', size='sm', color='teal-4')
+                                                initial = (cand_info["full_name"] or "?")[0].upper()
+                                                ui.element('span').classes('th-avatar').text = initial
                                                 with ui.column().classes('gap-0'):
-                                                    ui.label(cand_info["full_name"]).classes('font-semibold text-sm text-slate-100 hover:text-teal-400 transition-colors line-clamp-1')
+                                                    ui.label(cand_info["full_name"]).classes('font-semibold text-[10px] text-[#edf5f7] line-clamp-1')
                                                     if cand_info["current_title"]:
-                                                        ui.label(cand_info["current_title"]).classes('text-[11px] text-slate-400 line-clamp-1')
+                                                        ui.label(cand_info["current_title"]).classes('text-[10px] text-[#8195a5] line-clamp-1')
 
-                                            score_color = 'teal' if raw_sc >= 85 else ('amber' if raw_sc >= 70 else 'indigo')
-                                            ui.badge(f"{raw_sc:.0f}% Match", color=score_color).classes('text-[10px] font-bold px-1.5 py-0.5')
+                                            ui.element('span').classes('th-pill').text = f"{raw_sc:.0f}% match"
 
                                         if cand_info["current_company"] or cand_info["location"]:
-                                            with ui.row().classes('items-center gap-2 text-[11px] text-slate-400 px-1').on('click', lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc)):
+                                            with ui.row().classes('items-center gap-2 text-[10px] text-[#8195a5] px-1').on('click', lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc)):
                                                 if cand_info["current_company"]:
-                                                    ui.label(f"🏢 {cand_info['current_company']}").classes('line-clamp-1')
+                                                    ui.label(cand_info['current_company']).classes('line-clamp-1')
                                                 if cand_info["location"]:
-                                                    ui.label(f"📍 {cand_info['location']}").classes('line-clamp-1')
+                                                    ui.label(cand_info['location']).classes('line-clamp-1')
 
                                         if cand_info["ai_summary"]:
-                                            with ui.card().classes('w-full p-2 bg-slate-900/80 border border-teal-900/20 rounded text-[11px] text-slate-300 cursor-pointer').on('click', lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc)):
+                                            with ui.card().classes('w-full p-2 bg-[#091520] border border-[#1b3040] rounded text-[10px] text-[#8195a5] cursor-pointer').on('click', lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc)):
                                                 ui.label(cand_info["ai_summary"]).classes('line-clamp-2')
 
                                         with ui.row().classes('w-full justify-between items-center pt-1 text-xs'):
                                             with ui.row().classes('items-center gap-1'):
-                                                ui.button('View Profile', icon='visibility', on_click=lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc)).props('flat dense').classes('text-[10px] text-teal-300 hover:text-teal-200 px-2 py-0.5 bg-teal-950/60 border border-teal-500/30 rounded')
+                                                ui.button('View', icon='visibility', on_click=lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc)).props('flat dense').classes('text-[10px] text-[#8de8df] px-2 py-0.5')
                                                 if cand_info["linkedin_url"]:
-                                                    ui.button(icon='link', on_click=lambda e, u=cand_info["linkedin_url"]: ui.navigate.to(u, new_tab=True)).props('flat round dense').classes('text-teal-400').tooltip('LinkedIn Profile')
+                                                    ui.button(icon='link', on_click=lambda e, u=cand_info["linkedin_url"]: ui.navigate.to(u, new_tab=True)).props('flat round dense').classes('text-[#19d3c5]').tooltip('LinkedIn Profile')
 
-                                            with ui.button(icon='arrow_forward', color='teal').props('flat round dense').tooltip('Move Stage'):
-                                                with ui.menu().classes('bg-slate-900 border border-teal-900/40'):
+                                            with ui.button(icon='arrow_forward').props('flat round dense').classes('text-[#19d3c5]').tooltip('Move Stage'):
+                                                with ui.menu().classes('bg-[#0e1b28] border border-[#1b3040]'):
                                                     for target_st in stages:
                                                         if target_st["id"] != st_id:
                                                             ui.menu_item(
                                                                 f"Move to {target_st['name']}",
                                                                 on_click=lambda e, cid=c_id, tid=target_st["id"]: handle_move_candidate(cid, tid)
-                                                            ).classes('text-xs text-slate-200 hover:text-teal-400')
-                                                    ui.separator().classes('bg-teal-900/30')
+                                                            ).classes('text-xs text-[#edf5f7] hover:text-[#19d3c5]')
+                                                    ui.separator().classes('bg-[#1b3040]')
                                                     ui.menu_item(
                                                         'Remove Candidate',
                                                         on_click=lambda e, cid=c_id: handle_remove_candidate(cid)

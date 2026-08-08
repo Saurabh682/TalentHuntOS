@@ -30,23 +30,24 @@ def render_candidate_detail(candidate_id: int):
                 ui.button('Back to Candidates', icon='arrow_back', on_click=lambda: ui.navigate.to('/candidates')).classes('th-teal-btn')
             return
 
-        with ui.column().classes('w-full gap-6'):
+        with ui.column().classes('w-full gap-0'):
             # Top Navigation Header
-            with ui.row().classes('w-full justify-between items-center'):
+            with ui.row().classes('w-full justify-between items-center mb-[22px]'):
                 with ui.row().classes('items-center gap-3'):
                     ui.button(
                         icon='arrow_back', on_click=lambda: ui.navigate.to('/candidates')
-                    ).props('flat round dense').classes('text-slate-300 hover:text-teal-400')
+                    ).props('flat round dense').classes('text-[#8195a5] hover:text-[#19d3c5]')
                     with ui.column().classes('gap-0'):
-                        ui.label('360° Candidate Profile').classes('text-2xl font-bold text-slate-100')
-                        ui.label(f"ID #{candidate.id} • {candidate.full_name}").classes('text-xs text-teal-400 font-medium')
+                        ui.label('Candidates / Profile').classes('th-ey')
+                        ui.label(candidate.full_name or 'Candidate Profile').classes('th-title')
+                        ui.label(f"ID #{candidate.id} · 360° profile").classes('th-muted')
 
                 with ui.row().classes('items-center gap-2'):
-                    ui.button('Edit Profile', icon='edit', color='teal', on_click=lambda: open_edit_profile_dialog()).props('outlined').classes('text-teal-300 border-teal-500/40 text-xs')
-                    ui.button('Add Note', icon='post_add', color='teal', on_click=lambda: open_add_note_dialog()).classes('th-teal-btn text-xs')
+                    ui.button('Edit Profile', icon='edit', on_click=lambda: open_edit_profile_dialog()).classes('th-slate-btn text-xs')
+                    ui.button('Add Note', icon='post_add', on_click=lambda: open_add_note_dialog()).classes('th-primary-btn text-xs')
 
             # Main Profile Header Card
-            with ui.card().classes('w-full p-6 th-card border border-teal-900/30 gap-4'):
+            with ui.card().classes('w-full p-6 th-card gap-4'):
                 with ui.row().classes('w-full justify-between items-start flex-wrap gap-4'):
                     with ui.row().classes('items-center gap-5'):
                         ui.avatar(candidate.full_name[0].upper() if candidate.full_name else '?', color='teal-9', text_color='teal-2').classes('w-16 h-16 text-2xl font-bold border-2 border-teal-400/40')

@@ -39,14 +39,13 @@ def render_analytics():
     # Initial data load
     fetch_data()
 
-    with ui.column().classes('w-full gap-6 p-2'):
+    with ui.column().classes('w-full gap-0'):
         # Header & Filter Bar
-        with ui.row().classes('w-full justify-between items-center flex-wrap gap-4'):
-            with ui.column().classes('gap-1'):
-                with ui.row().classes('items-center gap-2'):
-                    ui.icon('insights', size='md', color='teal-4')
-                    ui.label('Analytics & Intelligence').classes('text-2xl font-bold text-slate-100')
-                ui.label('Real-time recruitment funnel, velocity, outreach response, and AI cost metrics.').classes('text-sm text-slate-400')
+        with ui.row().classes('w-full justify-between items-center flex-wrap gap-4 mb-[22px]'):
+            with ui.column().classes('gap-0'):
+                ui.label('Performance intelligence').classes('th-ey')
+                ui.label('Analytics & Intelligence').classes('th-title')
+                ui.label('Real-time recruitment funnel, velocity, outreach response and AI cost metrics.').classes('th-muted')
 
             with ui.row().classes('items-center gap-3 flex-wrap'):
                 # Hunt Selector
@@ -66,17 +65,17 @@ def render_analytics():
                 ).classes('w-48').props('outlined dense dark stack-label options-dense')
 
                 # Export Actions
-                ui.button('PDF Report', icon='picture_as_pdf', color='teal', on_click=lambda: handle_export_pdf()).classes('th-teal-btn')
-                ui.button('CSV Export', icon='download', color='blue-grey', on_click=lambda: handle_export_csv()).classes('th-slate-btn')
+                ui.button('⇩ Export CSV', on_click=lambda: handle_export_csv()).classes('th-slate-btn')
+                ui.button('PDF Report', icon='picture_as_pdf', on_click=lambda: handle_export_pdf()).classes('th-primary-btn')
 
         # KPI Summary Cards Grid
-        kpi_container = ui.row().classes('w-full gap-4 flex-wrap no-wrap-md')
+        kpi_container = ui.row().classes('w-full gap-[13px] flex-wrap no-wrap-md')
         
         # Charts Container
-        charts_container = ui.column().classes('w-full gap-6')
+        charts_container = ui.column().classes('w-full gap-[13px] mt-[13px]')
 
         # Data Tables Container
-        tables_container = ui.column().classes('w-full gap-6')
+        tables_container = ui.column().classes('w-full gap-[13px]')
 
         def render_kpi_cards():
             kpi_container.clear()

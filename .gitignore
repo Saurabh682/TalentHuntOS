@@ -17,12 +17,14 @@ dist/
 *.db
 *.sqlite
 *.sqlite3
-data/*.db
-data/*.json
+*.db-shm
+*.db-wal
+data/
 
 # Scratch & Cache directories
 graphify-out/
 scratch/
+.graphify*
 
 # Virtual Envs
 .venv/
