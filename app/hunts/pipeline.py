@@ -55,12 +55,32 @@ def add_candidate_to_hunt(
     notes: Optional[str] = None,
     linkedin_url: Optional[str] = None,
     github_url: Optional[str] = None,
+    source_platform: Optional[str] = None,
+    source_query: Optional[str] = None,
 ) -> HuntCandidate:
     """Add a new candidate to a hunt pipeline."""
     if not stage_id:
         stmt = select(HuntStage).where(HuntStage.hunt_id == hunt_id).order_by(HuntStage.position)
         first_stage = db.scalars(stmt).first()
         stage_id = first_stage.id if first_stage else None
+
+    # Check if already exists to prevent IntegrityError
+    if candidate_id is not None:
+        stmt = select(HuntCandidate).where(
+            HuntCandidate.hunt_id == hunt_id, HuntCandidate.candidate_id == candidate_id
+        )
+        existing_hc = db.scalars(stmt).first()
+        if existing_hc:
+            if source_platform and not existing_hc.source_platform:
+                existing_hc.source_platform = source_platform
+            if source_query and not existing_hc.source_query:
+                existing_hc.source_query = source_query
+            try:
+                db.commit()
+                db.refresh(existing_hc)
+            except Exception:
+                db.rollback()
+            return existing_hc
 
     candidate = HuntCandidate(
         hunt_id=hunt_id,
@@ -77,13 +97,9 @@ def add_candidate_to_hunt(
         notes=notes,
         linkedin_url=linkedin_url,
         github_url=github_url,
+        source_platform=source_platform,
+        source_query=source_query,
     )
-    
-    # Check if already exists to prevent IntegrityError
-    stmt = select(HuntCandidate).where(HuntCandidate.hunt_id == hunt_id, HuntCandidate.candidate_id == candidate_id)
-    existing_hc = db.scalars(stmt).first()
-    if existing_hc:
-        return existing_hc
 
     db.add(candidate)
     try:
@@ -164,7 +180,7 @@ def add_stage_to_hunt(
 
 
 def remove_candidate(db: Session, candidate_id: int) -> bool:
-    """Remove a candidate from a pipeline."""
+    """Remove a candidate from a pipeline (by HuntCandidate row id)."""
     candidate = db.get(HuntCandidate, candidate_id)
     if not candidate:
         return False
@@ -175,3 +191,50 @@ def remove_candidate(db: Session, candidate_id: int) -> bool:
         db.rollback()
         raise
     return True
+
+
+def clear_hunt_candidates(
+    db: Session,
+    hunt_id: int,
+    *,
+    name_contains: Optional[str] = None,
+    stage_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Remove hunt pipeline enrollments (does not delete master Candidate profiles).
+
+    Optional filters:
+    - name_contains: case-insensitive substring match on full_name
+    - stage_name: only remove from a stage (e.g. 'Sourced')
+    """
+    hunt = db.get(TalentHunt, hunt_id)
+    if not hunt:
+        return {"removed": 0, "error": f"Hunt {hunt_id} not found"}
+
+    stmt = select(HuntCandidate).where(HuntCandidate.hunt_id == hunt_id)
+    rows = list(db.scalars(stmt).all())
+    removed_names: List[str] = []
+    needle = (name_contains or "").strip().lower()
+    stage_needle = (stage_name or "").strip().lower()
+
+    for hc in rows:
+        if needle and needle not in (hc.full_name or "").lower():
+            continue
+        if stage_needle:
+            stage = db.get(HuntStage, hc.stage_id) if hc.stage_id else None
+            if not stage or stage_needle not in (stage.name or "").lower():
+                continue
+        removed_names.append(hc.full_name or f"id:{hc.id}")
+        db.delete(hc)
+
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise
+
+    return {
+        "removed": len(removed_names),
+        "hunt_id": hunt_id,
+        "hunt_title": hunt.title,
+        "names": removed_names[:50],
+    }

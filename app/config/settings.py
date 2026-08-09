@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     app_name: str = "TalentHunt OS"
     app_version: str = "0.1.0"
     debug: bool = True
+    # SQLAlchemy statement logging floods the console; keep off unless debugging DB issues
+    sql_echo: bool = False
     host: str = "127.0.0.1"
     port: int = 8080
     

@@ -10,6 +10,14 @@ from app.hunts.pipeline import (
     add_candidate_to_hunt,
     remove_candidate,
 )
+from app.hunts.playbook import keep_hunt_candidate, pass_hunt_candidate
+
+
+def _playbook_author() -> str:
+    try:
+        return (ui.app.storage.user.get("playbook_author") or "Recruiter").strip() or "Recruiter"
+    except Exception:
+        return "Recruiter"
 
 
 def render_pipeline(hunt_id: int = 1):
@@ -27,11 +35,11 @@ def render_pipeline(hunt_id: int = 1):
         pipeline_data = get_pipeline_data(db, current_hunt_id)
         hunt_options = {h.id: h.title for h in hunts_list}
 
-    with ui.column().classes('w-full gap-0'):
+    with ui.column().classes('w-full gap-0 th-pipeline-page'):
         # Header Row
         hunt_title = pipeline_data.get("hunt_title", "Talent Pipeline")
         role_sub = f"{pipeline_data.get('target_role', 'N/A')} · {pipeline_data.get('total_candidates', 0)} candidates"
-        with ui.row().classes('w-full justify-between items-center gap-5 mb-[22px]'):
+        with ui.row().classes('w-full justify-between items-center gap-5 th-pipeline-header'):
             with ui.row().classes('items-center gap-3'):
                 ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/hunts')).props('flat round dense').classes('text-[#8195a5]')
                 with ui.column().classes('gap-0'):
@@ -40,6 +48,10 @@ def render_pipeline(hunt_id: int = 1):
                     ui.label(role_sub).classes('th-muted')
 
             with ui.row().classes('items-center gap-2'):
+                ui.button(
+                    'Playbook', icon='menu_book',
+                    on_click=lambda: ui.navigate.to('/playbook')
+                ).props('flat dense').classes('text-[#8de8df] text-xs')
                 ui.select(
                     options=hunt_options,
                     value=current_hunt_id,
@@ -48,8 +60,62 @@ def render_pipeline(hunt_id: int = 1):
 
                 ui.button('＋ Add Candidate', on_click=lambda: open_add_candidate_dialog(current_hunt_id)).classes('th-primary-btn')
 
-        # Kanban Board Area
-        board_container = ui.row().classes('w-full overflow-x-auto gap-[9px] no-wrap pb-6 items-start min-h-[650px]')
+        # Kanban board: horizontal scroll stays under the columns (viewport-bound)
+        board_container = ui.element('div').classes('th-pipeline-board')
+
+        def open_triage_dialog(c: dict, action: str):
+            """Keep or Pass with optional note → global playbook."""
+            title = "Keep for hunt" if action == "keep" else "Pass (log & remove)"
+            with ui.dialog() as dialog, ui.card().classes('w-full max-w-md p-5 th-card border border-teal-500/30 gap-3'):
+                ui.label(title).classes('text-lg font-bold text-slate-100')
+                ui.label(c.get("full_name") or "Candidate").classes('text-sm text-teal-300')
+                if c.get("source_platform") or c.get("source_query"):
+                    with ui.column().classes('w-full gap-1 p-2 rounded bg-slate-900/70 border border-teal-900/30'):
+                        ui.label('Sourcing context').classes('text-[10px] font-bold text-teal-400 uppercase')
+                        if c.get("source_platform"):
+                            ui.label(f"Platform: {c['source_platform']}").classes('text-xs text-slate-300')
+                        if c.get("source_query"):
+                            ui.label(f"Query: {c['source_query']}").classes('text-xs text-slate-400')
+                note_in = ui.textarea(
+                    placeholder='Optional note — what worked / why pass…'
+                ).classes('w-full').props('dark outlined dense')
+                with ui.row().classes('w-full justify-end gap-2 mt-2'):
+                    ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400 text-xs')
+
+                    def confirm():
+                        note = (note_in.value or "").strip() or None
+                        author = _playbook_author()
+                        try:
+                            with SessionFactory() as db:
+                                if action == "keep":
+                                    result = keep_hunt_candidate(
+                                        db, c["id"], note=note, author_name=author
+                                    )
+                                else:
+                                    result = pass_hunt_candidate(
+                                        db, c["id"], note=note, author_name=author
+                                    )
+                            if result.get("status") != "success":
+                                ui.notify(result.get("error") or "Triage failed", type="negative")
+                                return
+                            msg = (
+                                f"Kept — logged to Playbook"
+                                + (f" → {result.get('moved_to_stage')}" if result.get("moved_to_stage") else "")
+                                if action == "keep"
+                                else "Passed — removed & logged to Playbook"
+                            )
+                            ui.notify(msg, type="positive" if action == "keep" else "info")
+                            dialog.close()
+                            refresh_board()
+                        except Exception as exc:
+                            ui.notify(f"Error: {exc}", type="negative")
+
+                    btn_label = "Keep & log" if action == "keep" else "Pass & log"
+                    btn_color = "teal" if action == "keep" else "orange"
+                    ui.button(btn_label, icon='check' if action == "keep" else 'thumb_down', on_click=confirm).props(
+                        f'color={btn_color}'
+                    ).classes('text-xs')
+            dialog.open()
 
         def refresh_board():
             board_container.clear()
@@ -64,10 +130,11 @@ def render_pipeline(hunt_id: int = 1):
                         st_name = stage["name"]
                         st_color = stage["color"]
                         candidates = stage["candidates"]
+                        is_sourced = (st_name or "").strip().lower() == "sourced"
 
-                        with ui.column().classes('w-72 shrink-0 th-kanban-col gap-2') as col:
+                        with ui.column().classes('th-kanban-col gap-2') as col:
                             # Column Header
-                            with ui.row().classes('w-full justify-between items-center px-1 pb-2'):
+                            with ui.row().classes('w-full justify-between items-center px-1 pb-2 shrink-0'):
                                 with ui.row().classes('items-center gap-2'):
                                     ui.element('div').classes('w-2 h-2 rounded-full').style(f'background-color: {st_color};')
                                     ui.label(st_name.upper()).classes('th-muted font-semibold tracking-wide')
@@ -84,16 +151,15 @@ def render_pipeline(hunt_id: int = 1):
                             col.on('dragover', js_handler='e => e.preventDefault()')
                             col.on('drop', handle_drop, ['dataTransfer.getData("text/plain")'])
 
-                            with ui.column().classes('w-full gap-3 col grow overflow-y-auto min-h-[450px] p-1'):
+                            with ui.column().classes('w-full gap-3 th-kanban-cards p-1'):
                                 if not candidates:
                                     with ui.column().classes('w-full h-32 items-center justify-center text-slate-600 text-xs border border-dashed border-slate-800 rounded-lg'):
                                         ui.label('No candidates in stage')
 
                                 for c in candidates:
                                     c_id = c.id
-                                    cand_id_val = c.candidate_id
                                     raw_sc = (c.match_score * 100 if c.match_score <= 1.0 else c.match_score) if c.match_score is not None else 88.0
-                                    
+
                                     cand_info = {
                                         "id": c.id,
                                         "candidate_id": c.candidate_id,
@@ -108,6 +174,9 @@ def render_pipeline(hunt_id: int = 1):
                                         "notes": c.notes,
                                         "linkedin_url": c.linkedin_url,
                                         "github_url": c.github_url,
+                                        "source_platform": getattr(c, "source_platform", None),
+                                        "source_query": getattr(c, "source_query", None),
+                                        "stage_name": st_name,
                                     }
 
                                     with ui.card().classes('w-full th-candidate-card hover:border-[#19d3c5]/50 transition-all cursor-pointer gap-2') as card:
@@ -132,9 +201,23 @@ def render_pipeline(hunt_id: int = 1):
                                                 if cand_info["location"]:
                                                     ui.label(cand_info['location']).classes('line-clamp-1')
 
+                                        if cand_info.get("source_platform"):
+                                            ui.label(f"via {cand_info['source_platform']}").classes('text-[9px] text-[#19d3c5]/80 px-1')
+
                                         if cand_info["ai_summary"]:
                                             with ui.card().classes('w-full p-2 bg-[#091520] border border-[#1b3040] rounded text-[10px] text-[#8195a5] cursor-pointer').on('click', lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc)):
                                                 ui.label(cand_info["ai_summary"]).classes('line-clamp-2')
+
+                                        if is_sourced:
+                                            with ui.row().classes('w-full gap-1 pt-1'):
+                                                ui.button(
+                                                    'Keep', icon='thumb_up',
+                                                    on_click=lambda e, info=cand_info: open_triage_dialog(info, "keep")
+                                                ).props('dense flat no-caps').classes('text-[10px] text-teal-300 flex-1')
+                                                ui.button(
+                                                    'Pass', icon='thumb_down',
+                                                    on_click=lambda e, info=cand_info: open_triage_dialog(info, "pass")
+                                                ).props('dense flat no-caps').classes('text-[10px] text-orange-300 flex-1')
 
                                         with ui.row().classes('w-full justify-between items-center pt-1 text-xs'):
                                             with ui.row().classes('items-center gap-1'):
@@ -182,7 +265,7 @@ def render_pipeline(hunt_id: int = 1):
                         with ui.column().classes('gap-0'):
                             ui.label(c["full_name"]).classes('text-xl font-bold text-slate-100')
                             ui.label(f"{c.get('current_title') or 'Candidate'} • {c.get('current_company') or 'N/A'}").classes('text-xs text-slate-400 font-medium')
-                    
+
                     sc_color = 'teal' if score >= 85 else ('amber' if score >= 70 else 'indigo')
                     ui.badge(f"{score:.0f}% Fit Match", color=sc_color).classes('text-xs font-bold px-2 py-1')
 
@@ -190,11 +273,21 @@ def render_pipeline(hunt_id: int = 1):
 
                 with ui.row().classes('w-full justify-between items-center text-xs text-slate-300 gap-4 bg-slate-900/60 p-3 rounded-lg border border-teal-900/20'):
                     with ui.column().classes('gap-1'):
-                        ui.label(f"📍 Location: {c.get('location') or 'N/A'}").classes('text-slate-300')
-                        ui.label(f"📧 Email: {c.get('email') or 'N/A'}").classes('text-slate-300')
+                        ui.label(f"Location: {c.get('location') or 'N/A'}").classes('text-slate-300')
+                        ui.label(f"Email: {c.get('email') or 'N/A'}").classes('text-slate-300')
                     with ui.column().classes('gap-1'):
-                        ui.label(f"📞 Phone: {c.get('phone') or 'N/A'}").classes('text-slate-300')
-                        ui.label(f"📋 Status: {c.get('status') or 'Active'}").classes('text-slate-300')
+                        ui.label(f"Phone: {c.get('phone') or 'N/A'}").classes('text-slate-300')
+                        ui.label(f"Status: {c.get('status') or 'Active'}").classes('text-slate-300')
+
+                if c.get("source_platform") or c.get("source_query"):
+                    with ui.column().classes('w-full gap-1'):
+                        ui.label('Sourcing context').classes('text-xs font-bold text-teal-400')
+                        bits = []
+                        if c.get("source_platform"):
+                            bits.append(f"Platform: {c['source_platform']}")
+                        if c.get("source_query"):
+                            bits.append(f"Query: {c['source_query']}")
+                        ui.label(" · ".join(bits)).classes('text-xs text-slate-400')
 
                 if c.get("ai_summary"):
                     with ui.column().classes('w-full gap-1'):
@@ -215,6 +308,9 @@ def render_pipeline(hunt_id: int = 1):
                             ui.button('GitHub', icon='code', on_click=lambda e, u=c["github_url"]: ui.navigate.to(u, new_tab=True)).props('flat dense').classes('text-xs text-amber-400')
 
                     with ui.row().classes('items-center gap-2'):
+                        if (c.get("stage_name") or "").lower() == "sourced":
+                            ui.button('Keep', icon='thumb_up', on_click=lambda: [dialog.close(), open_triage_dialog(c, "keep")]).props('flat dense').classes('text-xs text-teal-300')
+                            ui.button('Pass', icon='thumb_down', on_click=lambda: [dialog.close(), open_triage_dialog(c, "pass")]).props('flat dense').classes('text-xs text-orange-300')
                         ui.button('Close', on_click=dialog.close).props('flat').classes('text-slate-400 text-xs')
                         target_cid = c.get("candidate_id") or c.get("id")
                         ui.button(

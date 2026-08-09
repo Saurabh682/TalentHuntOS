@@ -84,16 +84,16 @@ def create_hunt(
             elif min_exp and keywords_val:
                 keywords_val = f"Exp: {min_exp} | {keywords_val}"
 
+            from app.hunts.experience import parse_experience_range
+
             exp_min = search_config.get("experience_years_min")
-            if exp_min is None and min_exp:
-                # Try parsing first digit if min_exp contains digits
-                import re
-                m = re.search(r'\d+', str(min_exp))
-                if m:
-                    try:
-                        exp_min = int(m.group(0))
-                    except ValueError:
-                        exp_min = None
+            exp_max = search_config.get("experience_years_max")
+            if (exp_min is None or exp_max is None) and min_exp:
+                parsed_min, parsed_max = parse_experience_range(str(min_exp))
+                if exp_min is None:
+                    exp_min = parsed_min
+                if exp_max is None:
+                    exp_max = parsed_max
 
             cfg = HuntSearchConfig(
                 hunt_id=hunt.id,
@@ -101,8 +101,9 @@ def create_hunt(
                 required_skills=search_config.get("required_skills"),
                 preferred_skills=search_config.get("preferred_skills"),
                 experience_years_min=exp_min,
-                experience_years_max=search_config.get("experience_years_max"),
+                experience_years_max=exp_max,
                 locations=search_config.get("locations"),
+                industry=search_config.get("industry"),
                 remote_policy=search_config.get("remote_policy"),
                 target_platforms=parsed_platforms,
             )

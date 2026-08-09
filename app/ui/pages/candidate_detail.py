@@ -44,6 +44,13 @@ def render_candidate_detail(candidate_id: int):
 
                 with ui.row().classes('items-center gap-2'):
                     ui.button('Edit Profile', icon='edit', on_click=lambda: open_edit_profile_dialog()).classes('th-slate-btn text-xs')
+                    profile_url = candidate.linkedin_url or candidate.portfolio_url or candidate.github_url
+                    if profile_url:
+                        ui.button(
+                            'Open & read page',
+                            icon='travel_explore',
+                            on_click=lambda u=profile_url: open_read_page_dialog(u),
+                        ).props('flat dense').classes('text-xs text-teal-300')
                     ui.button('Add Note', icon='post_add', on_click=lambda: open_add_note_dialog()).classes('th-primary-btn text-xs')
 
             # Main Profile Header Card
@@ -212,12 +219,18 @@ def render_candidate_detail(candidate_id: int):
                             with ui.row().classes('gap-2 flex-wrap'):
                                 for tg in candidate.tags:
                                     tag_id = tg.id
-                                    with ui.chip(
+                                    chip = ui.chip(
                                         tg.tag_name,
                                         color='indigo-9',
-                                        on_close=lambda e, tid=tag_id: handle_remove_tag(tid)
-                                    ).classes('text-xs text-indigo-200'):
-                                        pass
+                                        removable=True,
+                                    ).classes('text-xs text-indigo-200')
+
+                                    def _on_tag_remove(e, tid=tag_id):
+                                        # Removable chip sets value=False when the X is clicked
+                                        if getattr(e, "value", False) is False:
+                                            handle_remove_tag(tid)
+
+                                    chip.on_value_change(_on_tag_remove)
 
                     # Recruiter Notes Timeline Card
                     with ui.card().classes('w-full p-5 th-card border border-teal-900/30 gap-3'):
@@ -274,6 +287,83 @@ def render_candidate_detail(candidate_id: int):
             remove_candidate_tag(db, candidate_id, tag_id)
         ui.notify('Tag removed.', type='info')
         ui.navigate.to(f'/candidates/{candidate_id}')
+
+    def open_read_page_dialog(url: str):
+        """Open profile URL in Playwright, expand sections, show extracted text, optionally save."""
+        import asyncio
+
+        with ui.dialog() as dialog, ui.card().classes('w-full max-w-3xl p-5 th-card border border-teal-500/40 gap-3'):
+            ui.label('Open & read profile page').classes('text-lg font-bold text-slate-100')
+            ui.label(url).classes('text-[11px] text-teal-400 break-all')
+            status_row = ui.row().classes('items-center gap-2')
+            with status_row:
+                ui.spinner(size='sm', color='teal')
+                ui.label('Opening page, expanding sections, reading text…').classes('text-xs text-slate-400')
+            result_box = ui.column().classes('w-full gap-2 max-h-[420px] overflow-y-auto')
+            actions = ui.row().classes('w-full justify-end gap-2')
+
+            async def run_read():
+                from app.browser.page_reader import enrich_profile_from_url
+                # Off the NiceGUI event loop so the WebSocket stays alive
+                enriched = await asyncio.to_thread(enrich_profile_from_url, url, headless=True)
+                status_row.clear()
+                result_box.clear()
+                actions.clear()
+                with status_row:
+                    if enriched.get("status") == "success":
+                        ui.icon('check_circle', color='teal-4', size='sm')
+                        ui.label(
+                            f'Read OK · expanded {enriched.get("expanded_clicks", 0)} section(s)'
+                        ).classes('text-xs text-teal-300')
+                    elif enriched.get("blocked"):
+                        ui.icon('lock', color='orange-4', size='sm')
+                        ui.label('Login wall — save Browser Session cookies or open while logged in.').classes(
+                            'text-xs text-orange-300'
+                        )
+                    else:
+                        ui.icon('error', color='red-4', size='sm')
+                        ui.label(enriched.get("error") or "Read failed").classes('text-xs text-red-300')
+
+                with result_box:
+                    meta = []
+                    if enriched.get("headline"):
+                        meta.append(f"Headline: {enriched['headline']}")
+                    if enriched.get("experience_years") is not None:
+                        meta.append(f"Experience: {enriched['experience_years']} yrs")
+                    if meta:
+                        ui.label(" · ".join(meta)).classes('text-xs text-slate-300')
+                    text = (enriched.get("text") or "").strip() or "(no text extracted)"
+                    ui.markdown(f"```\n{text[:6000]}\n```").classes(
+                        'text-[11px] text-slate-300 bg-slate-950/80 p-3 rounded border border-teal-900/30'
+                    )
+
+                with actions:
+                    ui.button('Close', on_click=dialog.close).props('flat').classes('text-slate-400 text-xs')
+
+                    def apply_to_profile():
+                        years = enriched.get("experience_years")
+                        summary = (enriched.get("summary") or enriched.get("text") or "")[:2000]
+                        kwargs = {}
+                        if years is not None:
+                            kwargs["experience_years"] = years
+                        if summary:
+                            kwargs["summary"] = summary
+                        if not kwargs:
+                            ui.notify('Nothing to apply.', type='warning')
+                            return
+                        with SessionFactory() as db:
+                            update_candidate(db, candidate_id, **kwargs)
+                        ui.notify('Profile updated from page text.', type='positive')
+                        dialog.close()
+                        ui.navigate.to(f'/candidates/{candidate_id}')
+
+                    if enriched.get("status") == "success":
+                        ui.button(
+                            'Apply to profile', icon='save', on_click=apply_to_profile
+                        ).classes('th-primary-btn text-xs')
+
+            ui.timer(0.05, run_read, once=True)
+        dialog.open()
 
     def open_add_tag_dialog():
         with ui.dialog() as dialog, ui.card().classes('p-6 th-card border border-indigo-500/40 gap-3'):

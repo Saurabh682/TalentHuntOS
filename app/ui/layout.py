@@ -38,6 +38,7 @@ def create_layout(main_content_fn, active_path: str = "/"):
                     ('Hunts', 'travel_explore', '/hunts'),
                     ('Candidates', 'group', '/candidates'),
                     ('Pipeline', 'view_kanban', '/pipeline'),
+                    ('Playbook', 'menu_book', '/playbook'),
                     ('Communications', 'forum', '/communications'),
                     ('Analytics', 'insights', '/analytics'),
                     ('Settings', 'settings', '/settings'),

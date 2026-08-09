@@ -66,6 +66,7 @@ class HuntSearchConfig(Base):
     experience_years_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     experience_years_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     locations: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    industry: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     remote_policy: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     target_platforms: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -130,6 +131,8 @@ class HuntCandidate(Base):
     match_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     ai_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_platform: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    source_query: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="Active", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -169,3 +172,29 @@ class HuntActivity(Base):
 
     def __repr__(self) -> str:
         return f"<HuntActivity(id={self.id}, type='{self.activity_type}', hunt_id={self.hunt_id})>"
+
+
+class PlaybookEntry(Base):
+    """Global shared sourcing playbook: Keep/Pass triage and worked/didn't insights."""
+    __tablename__ = "playbook_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entry_type: Mapped[str] = mapped_column(String(20), nullable=False)  # keep | pass | insight
+    insight_outcome: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # worked | didnt_work
+    role_context: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    platform: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    query_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    candidate_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    candidate_title: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    candidate_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    hunt_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    hunt_title: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    author_name: Mapped[str] = mapped_column(String(80), default="Recruiter", nullable=False)
+    metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<PlaybookEntry(id={self.id}, type='{self.entry_type}', role='{self.role_context}')>"

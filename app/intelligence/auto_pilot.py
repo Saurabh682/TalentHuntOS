@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 try:
@@ -23,17 +24,30 @@ logger = logging.getLogger("talenthunt.intelligence.auto_pilot")
 
 
 def _calculate_candidate_hunt_match(cand: Candidate, search_config: Optional[HuntSearchConfig], target_role: Optional[str]) -> float:
-    """Score candidate match quality against search configuration (0.0 to 1.0)."""
-    score = 0.4  # Base score
+    """Score candidate match quality against search configuration (0.0 to 1.0).
+
+    Starts at 0 — candidates with no title/skill overlap must not auto-match.
+    """
+    score = 0.0
+    evidence = 0
 
     cand_title = (cand.current_title or "").lower()
-    role_target = (target_role or "").lower()
+    role_target = (target_role or "").lower().strip()
+    role_tokens = [w for w in re.split(r"[^a-z0-9]+", role_target) if len(w) > 2]
 
-    # 1. Title match boost
-    if role_target and role_target in cand_title:
-        score += 0.25
-    elif role_target and any(w in cand_title for w in role_target.split() if len(w) > 2):
-        score += 0.15
+    # 1. Title match boost (required signal for autopilot)
+    if role_target and cand_title:
+        if role_target in cand_title or cand_title in role_target:
+            score += 0.45
+            evidence += 2
+        else:
+            token_hits = sum(1 for w in role_tokens if w in cand_title)
+            if token_hits >= 2:
+                score += 0.35
+                evidence += 2
+            elif token_hits == 1:
+                score += 0.15
+                evidence += 1
 
     # 2. Skills match boost
     if search_config:
@@ -47,18 +61,41 @@ def _calculate_candidate_hunt_match(cand: Candidate, search_config: Optional[Hun
             except Exception:
                 pass
 
+        skill_blob = " ".join(cand_skills) + " " + cand_title
+
         if req_skills:
-            matched_req = sum(1 for rs in req_skills if any(rs in cs for cs in cand_skills))
-            score += (matched_req / len(req_skills)) * 0.25
+            matched_req = sum(1 for rs in req_skills if rs in skill_blob)
+            if matched_req:
+                score += (matched_req / len(req_skills)) * 0.35
+                evidence += matched_req
 
         if pref_skills:
-            matched_pref = sum(1 for ps in pref_skills if any(ps in cs for cs in cand_skills))
-            score += (matched_pref / len(pref_skills)) * 0.10
+            matched_pref = sum(1 for ps in pref_skills if ps in skill_blob)
+            if matched_pref:
+                score += (matched_pref / len(pref_skills)) * 0.15
+                evidence += 1
 
-        # 3. Experience years check
-        if search_config.experience_years_min and cand.experience_years:
-            if cand.experience_years >= search_config.experience_years_min:
-                score += 0.05
+        # 3. Experience years — hard reject outside band
+        if search_config and (
+            search_config.experience_years_min is not None
+            or search_config.experience_years_max is not None
+        ):
+            from app.hunts.experience import experience_within_range
+
+            if not experience_within_range(
+                years=cand.experience_years,
+                exp_min=search_config.experience_years_min,
+                exp_max=search_config.experience_years_max,
+                title=cand.current_title,
+            ):
+                return 0.0
+            if cand.experience_years is not None:
+                score += 0.08
+                evidence += 1
+
+    # No meaningful overlap → hard reject
+    if evidence < 1:
+        return 0.0
 
     return round(min(1.0, score), 2)
 
@@ -117,8 +154,8 @@ def run_autopilot_hunt_job(hunt_id: int) -> Dict[str, Any]:
 
             match_score = _calculate_candidate_hunt_match(cand, search_config, target_role)
 
-            # Quality match threshold (>= 0.40)
-            if match_score >= 0.40:
+            # Require real overlap (old 0.40 base score matched everyone)
+            if match_score >= 0.55:
                 matched_count += 1
                 dna = generate_candidate_dna(cand)
                 ai_summary = (
@@ -146,6 +183,22 @@ def run_autopilot_hunt_job(hunt_id: int) -> Dict[str, Any]:
                 )
                 db.add(hunt_cand)
                 db.flush()
+
+                # Tag master candidate with hunt heading so Candidates page shows the label
+                try:
+                    from app.candidates.service import add_candidate_tag
+                    from app.candidates.models import CandidateTag
+                    hunt_tag = f"Hunt: {hunt.title}"
+                    has_tag = db.scalars(
+                        select(CandidateTag).where(
+                            CandidateTag.candidate_id == cand.id,
+                            CandidateTag.tag_name == hunt_tag,
+                        ).limit(1)
+                    ).first()
+                    if not has_tag:
+                        db.add(CandidateTag(candidate_id=cand.id, tag_name=hunt_tag, color="#19d3c5"))
+                except Exception as tag_exc:
+                    logger.warning("Could not tag candidate %s with hunt label: %s", cand.id, tag_exc)
 
                 activity = HuntActivity(
                     hunt_id=hunt.id,

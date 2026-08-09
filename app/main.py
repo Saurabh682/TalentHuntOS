@@ -11,6 +11,7 @@ from app.ui.pages.candidates import candidates_page
 from app.ui.pages.candidate_detail import candidate_detail_page
 from app.ui.pages.communications import communications_page
 from app.ui.pages.analytics import analytics_page
+from app.ui.pages.playbook import playbook_page
 
 # Import voice audio bridge to register WebSocket endpoint at /ws/audio
 import app.voice.audio_bridge  # noqa: F401
@@ -31,6 +32,10 @@ def hunt_pipeline_view(hunt_id: int):
 @ui.page('/pipeline')
 def pipeline_view():
     pipeline_page()
+
+@ui.page('/playbook')
+def playbook_view():
+    playbook_page()
 
 @ui.page('/candidates')
 def candidates_view():

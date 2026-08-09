@@ -12,6 +12,14 @@ from app.candidates.service import (
 )
 from app.candidates.search import candidate_search_index
 from app.candidates.rag import candidate_rag
+from app.hunts.web_sourcing import get_hunt_labels_for_candidates
+from app.hunts.playbook import mark_candidate_rogue, clear_candidate_rogue, ROGUE_TAG
+from app.hunts.service import list_hunts, get_hunt
+from app.hunts.pipeline import add_candidate_to_hunt
+from app.hunts.models import HuntCandidate
+from app.candidates.service import add_candidate_tag
+from app.candidates.models import Candidate, CandidateTag
+from sqlalchemy import select
 
 
 def render_candidates():
@@ -23,6 +31,163 @@ def render_candidates():
     selected_status = {"value": "All"}
     search_mode = {"mode": "keyword"}  # "keyword" or "vector"
     refresh_view_ref = {"fn": lambda: None}
+
+    def _author() -> str:
+        try:
+            return (ui.app.storage.user.get("playbook_author") or "Recruiter").strip() or "Recruiter"
+        except Exception:
+            return "Recruiter"
+
+    def open_rogue_dialog(cand_id: int, cand_name: str, is_rogue: bool):
+        if is_rogue:
+            with SessionFactory() as db:
+                clear_candidate_rogue(db, cand_id)
+            ui.notify(f'Cleared Rogue tag on {cand_name}', type='info')
+            refresh_view_ref["fn"]()
+            return
+
+        with ui.dialog() as dialog, ui.card().classes('w-full max-w-md p-5 th-card border border-orange-500/40 gap-3'):
+            ui.label('Mark as Rogue profile').classes('text-lg font-bold text-slate-100')
+            ui.label(cand_name).classes('text-sm text-orange-300')
+            ui.label(
+                'Use this for bad-fit / wrong-role leads so the team skips them next time. Logged to the shared Playbook.'
+            ).classes('text-xs text-slate-400')
+            note_in = ui.textarea(
+                placeholder='Optional — why this profile is rogue (wrong role, spam, irrelevant…)'
+            ).classes('w-full').props('dark outlined dense')
+            with ui.row().classes('w-full justify-end gap-2 mt-1'):
+                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400 text-xs')
+
+                def confirm():
+                    note = (note_in.value or "").strip() or None
+                    with SessionFactory() as db:
+                        result = mark_candidate_rogue(
+                            db, cand_id, note=note, author_name=_author()
+                        )
+                    if result.get("status") != "success":
+                        ui.notify(result.get("error") or "Failed", type="negative")
+                        return
+                    ui.notify(f'Marked {cand_name} as Rogue — logged to Playbook', type='warning')
+                    dialog.close()
+                    refresh_view_ref["fn"]()
+
+                ui.button('Mark Rogue', icon='report', on_click=confirm).props('color=orange').classes('text-xs')
+        dialog.open()
+
+    def open_assign_hunt_dialog(cand_id: int, cand_name: str, current_hunts: list):
+        """Assign (or move) this candidate to another Talent Hunt profile."""
+        with SessionFactory() as db:
+            hunts = list_hunts(db, status="Active") or list_hunts(db)
+            options = {str(h.id): f"{h.title} ({h.target_role or 'role n/a'})" for h in hunts}
+            cand = db.get(Candidate, cand_id)
+
+        if not options:
+            ui.notify('No Talent Hunts found. Create one on the Hunts page first.', type='warning')
+            return
+
+        with ui.dialog() as dialog, ui.card().classes(
+            'w-full max-w-md p-5 th-card border border-teal-500/40 gap-3'
+        ):
+            ui.label('Assign to Talent Hunt').classes('text-lg font-bold text-slate-100')
+            ui.label(cand_name).classes('text-sm text-teal-300')
+            if current_hunts:
+                ui.label('Currently on: ' + ', '.join(current_hunts)).classes('text-[11px] text-slate-400')
+            else:
+                ui.label('Not linked to any hunt yet.').classes('text-[11px] text-slate-500')
+
+            hunt_select = ui.select(
+                options=options,
+                label='Talent Hunt',
+                value=next(iter(options.keys())),
+            ).classes('w-full').props('dark outlined dense')
+
+            move_only = ui.checkbox(
+                'Remove from other hunts (move instead of add)',
+                value=False,
+            ).classes('text-xs text-slate-300')
+
+            note_in = ui.input(
+                placeholder='Optional note (e.g. better fit for this role)'
+            ).classes('w-full').props('dark outlined dense')
+
+            with ui.row().classes('w-full justify-end gap-2 mt-1'):
+                ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400 text-xs')
+
+                def confirm_assign():
+                    hid = int(hunt_select.value)
+                    with SessionFactory() as db:
+                        hunt = get_hunt(db, hid)
+                        if not hunt:
+                            ui.notify('Hunt not found', type='negative')
+                            return
+                        candidate = db.get(Candidate, cand_id)
+                        if not candidate:
+                            ui.notify('Candidate not found', type='negative')
+                            return
+
+                        if move_only.value:
+                            # Unlink from other hunts + drop their Hunt: tags
+                            other = list(
+                                db.scalars(
+                                    select(HuntCandidate).where(
+                                        HuntCandidate.candidate_id == cand_id,
+                                        HuntCandidate.hunt_id != hid,
+                                    )
+                                ).all()
+                            )
+                            for hc in other:
+                                db.delete(hc)
+                            tags = list(
+                                db.scalars(
+                                    select(CandidateTag).where(
+                                        CandidateTag.candidate_id == cand_id,
+                                        CandidateTag.tag_name.like('Hunt:%'),
+                                    )
+                                ).all()
+                            )
+                            keep_tag = f'Hunt: {hunt.title}'.lower()
+                            for t in tags:
+                                if (t.tag_name or '').lower() != keep_tag:
+                                    db.delete(t)
+                            db.commit()
+
+                        add_candidate_to_hunt(
+                            db,
+                            hunt_id=hid,
+                            full_name=candidate.full_name,
+                            candidate_id=candidate.id,
+                            current_title=candidate.current_title,
+                            current_company=candidate.current_company,
+                            location=candidate.location,
+                            linkedin_url=candidate.linkedin_url,
+                            ai_summary=(
+                                (note_in.value or '').strip()
+                                or f'Manually assigned to hunt "{hunt.title}" from Candidates.'
+                            ),
+                            match_score=80.0,
+                            source_platform='manual',
+                        )
+                        hunt_tag = f'Hunt: {hunt.title}'
+                        existing_tags = {
+                            (t.tag_name or '').lower()
+                            for t in db.scalars(
+                                select(CandidateTag).where(CandidateTag.candidate_id == cand_id)
+                            ).all()
+                        }
+                        if hunt_tag.lower() not in existing_tags:
+                            add_candidate_tag(db, cand_id, hunt_tag, color='#19d3c5')
+
+                    ui.notify(
+                        f'{"Moved" if move_only.value else "Added"} {cand_name} → {options[str(hid)]}',
+                        type='positive',
+                    )
+                    dialog.close()
+                    refresh_view_ref["fn"]()
+
+                ui.button(
+                    'Assign', icon='campaign', on_click=confirm_assign
+                ).classes('th-teal-btn text-xs')
+        dialog.open()
 
     def open_rag_qa_dialog():
         with ui.dialog() as dialog, ui.card().classes('w-full max-w-2xl p-6 th-card border border-indigo-500/40 gap-4'):
@@ -221,6 +386,10 @@ def render_candidates():
                     )
                     display_cands = [(c, None) for c in cands]
 
+                hunt_labels = get_hunt_labels_for_candidates(
+                    db, [c.id for c, _ in display_cands]
+                )
+
                 with candidates_container:
                     if not display_cands:
                         with ui.card().classes('w-full p-12 th-card items-center justify-center text-center gap-4'):
@@ -242,26 +411,40 @@ def render_candidates():
                                 skills = json.loads(cand.profile.skills_json)
                             except Exception:
                                 skills = []
+                        related_hunts = hunt_labels.get(cand_id, [])
+                        tag_names = { (t.tag_name or "").lower() for t in (cand.tags or []) }
+                        is_rogue = ROGUE_TAG.lower() in tag_names
 
-                        with ui.card().classes('w-full p-5 th-card border border-teal-900/30 hover:border-teal-500/40 transition-all duration-150 gap-3'):
+                        with ui.card().classes(
+                            'w-full p-5 th-card border transition-all duration-150 gap-3 '
+                            + ('border-orange-500/50 bg-orange-950/20' if is_rogue else 'border-teal-900/30 hover:border-teal-500/40')
+                        ):
                             with ui.row().classes('w-full justify-between items-start flex-wrap gap-2'):
                                 # Candidate Main Info
                                 with ui.row().classes('items-center gap-4'):
                                     ui.avatar(cand.full_name[0].upper() if cand.full_name else '?', color='teal-9', text_color='teal-2').classes('font-bold text-lg')
                                     with ui.column().classes('gap-0'):
-                                        with ui.row().classes('items-center gap-2'):
+                                        with ui.row().classes('items-center gap-2 flex-wrap'):
                                             ui.link(
                                                 cand.full_name,
                                                 target=f'/candidates/{cand_id}'
                                             ).classes('text-lg font-bold text-slate-100 hover:text-teal-400 transition-colors')
                                             st_color = 'teal' if cand.status == 'Active' else ('amber' if cand.status == 'Passive' else 'blue-grey')
                                             ui.badge(cand.status, color=st_color).classes('text-[10px] px-2 py-0.5')
+                                            if is_rogue:
+                                                ui.badge('Rogue', color='orange').classes(
+                                                    'text-[10px] px-2 py-0.5'
+                                                ).tooltip('Bad-fit / wrong profile — logged in Playbook')
+                                            for hunt_title in related_hunts:
+                                                ui.badge(hunt_title, color='teal-9').classes(
+                                                    'text-[10px] text-teal-100 px-2 py-0.5 border border-teal-500/40'
+                                                ).tooltip('Related Talent Hunt')
 
                                         subtitle = f"{cand.current_title or 'Candidate'} • {cand.current_company or 'N/A'}"
                                         ui.label(subtitle).classes('text-xs text-slate-400 font-medium')
 
                                 # Right side: Match score & Actions
-                                with ui.row().classes('items-center gap-3'):
+                                with ui.row().classes('items-center gap-2 flex-wrap'):
                                     if match_score is not None:
                                         sc_color = 'teal' if match_score >= 85 else ('amber' if match_score >= 70 else 'indigo')
                                         with ui.column().classes('items-end gap-0'):
@@ -272,6 +455,24 @@ def render_candidates():
                                         '360° Profile', icon='visibility', color='teal',
                                         on_click=lambda e, cid=cand_id: ui.navigate.to(f'/candidates/{cid}')
                                     ).classes('th-teal-btn text-xs')
+
+                                    ui.button(
+                                        'Add to Hunt',
+                                        icon='campaign',
+                                        on_click=lambda e, cid=cand_id, name=cand.full_name, hunts=list(related_hunts): open_assign_hunt_dialog(cid, name, hunts),
+                                    ).props('flat dense no-caps').classes(
+                                        'text-xs text-teal-300'
+                                    ).tooltip('Assign or move this profile to another Talent Hunt')
+
+                                    ui.button(
+                                        'Clear Rogue' if is_rogue else 'Rogue',
+                                        icon='report_off' if is_rogue else 'report',
+                                        on_click=lambda e, cid=cand_id, name=cand.full_name, r=is_rogue: open_rogue_dialog(cid, name, r)
+                                    ).props('flat dense no-caps').classes(
+                                        'text-xs text-teal-300' if is_rogue else 'text-xs text-orange-300'
+                                    ).tooltip(
+                                        'Remove Rogue tag' if is_rogue else 'Tag as rogue / bad-fit profile'
+                                    )
 
                                     ui.button(
                                         icon='delete_outline',
@@ -306,9 +507,23 @@ def render_candidates():
                                     if len(skills) > 7:
                                         ui.label(f"+{len(skills) - 7} more").classes('text-[10px] text-slate-500')
 
-                                with ui.row().classes('items-center gap-1.5'):
+                                with ui.row().classes('items-center gap-1.5 flex-wrap'):
+                                    # Prefer hunt relation badges above; still show Hunt: tags + other tags
+                                    shown = {h.lower() for h in related_hunts}
                                     for tg in cand.tags:
-                                        ui.badge(tg.tag_name, color='indigo-9').classes('text-[10px] text-indigo-200 px-2 py-0.5')
+                                        label = tg.tag_name or ""
+                                        low = label.lower()
+                                        if low == ROGUE_TAG.lower():
+                                            continue  # shown next to name
+                                        if low.startswith("hunt: "):
+                                            hunt_only = label[6:].strip()
+                                            if hunt_only.lower() in shown:
+                                                continue
+                                            ui.badge(hunt_only or label, color='teal-9').classes(
+                                                'text-[10px] text-teal-100 px-2 py-0.5 border border-teal-500/40'
+                                            )
+                                        else:
+                                            ui.badge(label, color='indigo-9').classes('text-[10px] text-indigo-200 px-2 py-0.5')
 
         refresh_view_ref["fn"] = refresh_view
         search_input.on('update:model-value', lambda e: refresh_view())

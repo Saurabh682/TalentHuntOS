@@ -412,7 +412,59 @@ html, body, #app, #q-app {{
   border: 1px solid var(--th-border);
   border-radius: 11px;
   padding: 10px;
-  min-height: 500px;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 288px;
+  width: 288px;
+  box-sizing: border-box;
+}}
+
+.th-kanban-cards {{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}}
+
+/* Pipeline: keep board scroll inside the viewport (H-scrollbar under columns, not page bottom) */
+.th-main:has(.th-pipeline-page) {{
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}}
+
+.th-main > .th-pipeline-page {{
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  gap: 0 !important;
+}}
+
+.th-pipeline-header {{
+  flex: 0 0 auto !important;
+  margin-bottom: 16px !important;
+}}
+
+.th-pipeline-board {{
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  gap: 9px !important;
+  padding-bottom: 10px !important;
 }}
 
 .th-candidate-card {{

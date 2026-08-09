@@ -5,6 +5,45 @@ from nicegui import ui
 from app.copilot.conversation import conversation_manager
 from app.copilot.streaming import stream_copilot_response
 
+# Survives page navigations (layout remounts the panel on every route change)
+_COPILOT_STATE = {
+    "session_id": "default",
+    "input_history": [],
+    "history_index": -1,
+    "draft": "",
+    "select_ready": False,
+}
+
+
+def _persist_session(session_id: str) -> None:
+    _COPILOT_STATE["session_id"] = session_id or "default"
+    try:
+        if hasattr(ui, "app") and hasattr(ui.app, "storage"):
+            ui.app.storage.user["active_session_id"] = _COPILOT_STATE["session_id"]
+    except Exception:
+        pass
+
+
+def _load_session_id(options: dict) -> str:
+    """Prefer module memory, then user storage; keep hunt sessions even if not Active."""
+    sid = _COPILOT_STATE.get("session_id") or "default"
+    try:
+        if hasattr(ui, "app") and hasattr(ui.app, "storage"):
+            stored = ui.app.storage.user.get("active_session_id")
+            if stored:
+                sid = stored
+                _COPILOT_STATE["session_id"] = sid
+    except Exception:
+        pass
+    if sid not in options:
+        # Keep a phantom option so the select doesn't snap to General Chat
+        if sid.startswith("hunt_"):
+            options[sid] = f"Hunt {sid.split('_', 1)[1]}"
+        else:
+            sid = "default"
+            _COPILOT_STATE["session_id"] = "default"
+    return sid
+
 
 def render_copilot_panel():
     """Render the interactive Copilot chat side panel with real-time Voice Engine integration."""
@@ -35,7 +74,7 @@ def render_copilot_panel():
                 for (let i = event.resultIndex; i < event.results.length; i++) {
                     transcript += event.results[i][0].transcript;
                 }
-                const inputEl = document.querySelector('.th-copilot-panel input');
+                const inputEl = document.querySelector('.th-copilot-input input') || document.querySelector('.th-copilot-panel input');
                 if (inputEl) {
                     inputEl.value = transcript;
                     inputEl.dispatchEvent(new Event('input', { bubbles: true }));
@@ -121,10 +160,14 @@ def render_copilot_panel():
     tts_active = {"enabled": True}
     chat_container_ref = {"el": None}
     input_field_ref = {"el": None}
+    session_select_ref = {"el": None}
+    busy_state = {"chat": False, "label": ""}
+    busy_banner_ref = {"el": None, "label": None, "detail": None}
+    send_btn_ref = {"el": None}
 
-    input_history = []
-    history_state = {"index": -1, "draft": ""}
-
+    # Bind to process-level history so Up/Down survives route changes
+    input_history = _COPILOT_STATE["input_history"]
+    history_state = _COPILOT_STATE  # uses history_index + draft keys
     active_session_id = {"value": "default"}
 
     def get_hunt_options():
@@ -133,20 +176,20 @@ def render_copilot_panel():
             from app.infrastructure.db import SessionFactory
             from app.hunts.service import list_hunts
             with SessionFactory() as db:
-                hunts = list_hunts(db, status="Active")
+                # Include Active + recent hunts so switching pages doesn't drop the selection
+                hunts = list_hunts(db, limit=100)
                 for h in hunts:
-                    options[f"hunt_{h.id}"] = h.title
+                    label = h.title or f"Hunt {h.id}"
+                    if h.status and h.status != "Active":
+                        label = f"{label} ({h.status})"
+                    options[f"hunt_{h.id}"] = label
         except Exception:
             pass
         return options
 
-    try:
-        if hasattr(ui, 'app') and hasattr(ui.app, 'storage') and 'active_session_id' in ui.app.storage.user:
-            saved_sid = ui.app.storage.user['active_session_id']
-            if saved_sid in get_hunt_options():
-                active_session_id["value"] = saved_sid
-    except Exception:
-        pass
+    options = get_hunt_options()
+    active_session_id["value"] = _load_session_id(options)
+    _COPILOT_STATE["select_ready"] = False
 
     def scroll_to_bottom():
         try:
@@ -187,16 +230,42 @@ def render_copilot_panel():
         if not input_el or not input_el.value.strip():
             return
 
+        from app.hunts import sourcing_jobs
+        from app.copilot.direct_actions import parse_clear_and_source, run_clear_and_source
+
         user_text = input_el.value.strip()
+        direct = parse_clear_and_source(user_text)
+        low = user_text.lower()
+        force_new = bool(direct) or any(
+            w in low for w in ("cancel", "stop crawl", "stop sourcing", "clear this hunt")
+        )
+
+        if busy_state["chat"] and not force_new:
+            ui.notify(
+                "Copilot is still answering. Wait a moment, or send a clear/cancel command.",
+                type="warning",
+            )
+            return
+
+        if sourcing_jobs.is_busy() and not force_new:
+            ui.notify(
+                "A LinkedIn crawl is running. Wait, click Cancel on the orange banner, "
+                "or type: clear this hunt and look for 25 talents on LinkedIn",
+                type="warning",
+            )
+            return
 
         if not input_history or input_history[-1] != user_text:
             input_history.append(user_text)
             if len(input_history) > 50:
                 input_history.pop(0)
-        history_state["index"] = -1
+        history_state["history_index"] = -1
         history_state["draft"] = ""
 
         input_el.value = ""
+        busy_state["chat"] = True
+        busy_state["label"] = "Copilot is working…"
+        _refresh_busy_banner()
 
         with chat_el:
             with ui.chat_message(name="You", stamp="now", avatar=USER_AVATAR, sent=True).classes('w-full'):
@@ -210,41 +279,97 @@ def render_copilot_panel():
 
         final_resp = ""
         try:
-            async for accum_text in stream_copilot_response(user_text, session_id=active_session_id["value"]):
-                response_label.content = accum_text
-                final_resp = accum_text
+            # Deterministic path — don't rely on the LLM to call tools
+            if direct:
+                final_resp = await asyncio.to_thread(
+                    run_clear_and_source,
+                    session_id=active_session_id["value"],
+                    target=direct["target"],
+                    clear=direct["clear"],
+                )
+                response_label.content = final_resp
+                from app.copilot.conversation import conversation_manager as _cm
+                _cm.add_user_message(user_text, active_session_id["value"])
+                _cm.add_assistant_message(final_resp, active_session_id["value"])
                 scroll_to_bottom()
+            else:
+                last_push = {"text": "", "n": 0}
+                async for accum_text in stream_copilot_response(
+                    user_text, session_id=active_session_id["value"]
+                ):
+                    final_resp = accum_text
+                    last_push["n"] += 1
+                    if last_push["n"] % 8 == 0 or len(accum_text) - len(last_push["text"]) > 120:
+                        response_label.content = accum_text
+                        last_push["text"] = accum_text
+                        scroll_to_bottom()
+                if final_resp and final_resp != last_push["text"]:
+                    response_label.content = final_resp
+                    scroll_to_bottom()
         except Exception as exc:
             final_resp = f"Error during response streaming: {exc}"
             response_label.content = final_resp
-            conversation_manager.add_assistant_message(final_resp, session_id=active_session_id["value"])
+            conversation_manager.add_assistant_message(
+                final_resp, session_id=active_session_id["value"]
+            )
+        finally:
+            busy_state["chat"] = False
+            _refresh_busy_banner()
 
         render_history()
         import json
-        if final_resp and not final_resp.startswith("Error"):
-            ui.run_javascript(f'speakTextFree({json.dumps(final_resp)});')
+        if final_resp and not final_resp.startswith("Error") and len(final_resp) < 2500:
+            ui.run_javascript(f'speakTextFree({json.dumps(final_resp[:1500])});')
 
     def handle_up(e):
-        if not input_history:
+        if not input_history or not input_field_ref["el"]:
             return
-        if history_state["index"] == -1:
-            history_state["draft"] = input_field_ref["el"].value
-            history_state["index"] = len(input_history) - 1
-        elif history_state["index"] > 0:
-            history_state["index"] -= 1
-        input_field_ref["el"].value = input_history[history_state["index"]]
+        try:
+            # Stop the cursor from jumping to start of the Quasar input
+            ui.run_javascript(
+                'const el=document.querySelector(".th-copilot-input input");'
+                'if(el){el.blur(); el.focus();}'
+            )
+        except Exception:
+            pass
+        if history_state["history_index"] == -1:
+            history_state["draft"] = input_field_ref["el"].value or ""
+            history_state["history_index"] = len(input_history) - 1
+        elif history_state["history_index"] > 0:
+            history_state["history_index"] -= 1
+        input_field_ref["el"].value = input_history[history_state["history_index"]]
         input_field_ref["el"].update()
 
     def handle_down(e):
-        if not input_history or history_state["index"] == -1:
+        if not input_history or not input_field_ref["el"] or history_state["history_index"] == -1:
             return
-        if history_state["index"] < len(input_history) - 1:
-            history_state["index"] += 1
-            input_field_ref["el"].value = input_history[history_state["index"]]
+        if history_state["history_index"] < len(input_history) - 1:
+            history_state["history_index"] += 1
+            input_field_ref["el"].value = input_history[history_state["history_index"]]
         else:
-            history_state["index"] = -1
-            input_field_ref["el"].value = history_state["draft"]
+            history_state["history_index"] = -1
+            input_field_ref["el"].value = history_state.get("draft") or ""
         input_field_ref["el"].update()
+
+    def handle_input_keydown(e):
+        """Route Up/Down for command history (works across NiceGUI key event shapes)."""
+        key = None
+        args = getattr(e, "args", None)
+        if isinstance(args, dict):
+            key = args.get("key") or args.get("code")
+        elif isinstance(args, list) and args:
+            first = args[0]
+            if isinstance(first, dict):
+                key = first.get("key") or first.get("code")
+            elif isinstance(first, str):
+                key = first
+        if not key and hasattr(e, "key"):
+            key = e.key
+        key = str(key or "")
+        if key in ("ArrowUp", "Up"):
+            handle_up(e)
+        elif key in ("ArrowDown", "Down"):
+            handle_down(e)
 
     with ui.element('div').classes('th-copilot-inner'):
         with ui.element('div').style(
@@ -280,20 +405,39 @@ def render_copilot_panel():
                 ).props('flat round dense').classes('text-[#d8941e]').tooltip('Browser Free Voice Input')
 
         def on_session_change(e):
-            active_session_id["value"] = e.value
-            try:
-                if hasattr(ui, 'app') and hasattr(ui.app, 'storage'):
-                    ui.app.storage.user['active_session_id'] = e.value
-            except Exception:
-                pass
+            new_val = e.value
+            # Ignore spurious on_change during remount (was snapping back to General Chat)
+            if not _COPILOT_STATE.get("select_ready"):
+                if new_val != active_session_id["value"] and session_select_ref["el"]:
+                    try:
+                        session_select_ref["el"].value = active_session_id["value"]
+                        session_select_ref["el"].update()
+                    except Exception:
+                        pass
+                return
+            if not new_val or new_val == active_session_id["value"]:
+                return
+            active_session_id["value"] = new_val
+            _persist_session(new_val)
             render_history()
 
         with ui.element('div').style('width:100%;margin-bottom:8px;flex-shrink:0'):
-            ui.select(
-                options=get_hunt_options(),
+            session_select_ref["el"] = ui.select(
+                options=options,
                 value=active_session_id["value"],
-                on_change=on_session_change
-            ).classes('w-full text-xs').props('dense outlined dark').tooltip('Switch conversation context')
+                on_change=on_session_change,
+            ).classes('w-full text-xs').props('dense outlined dark').tooltip(
+                'Switch conversation context (stays on this hunt when you navigate)'
+            )
+
+        def _mark_select_ready():
+            _COPILOT_STATE["select_ready"] = True
+            # Re-assert saved session after Quasar finishes mounting
+            if session_select_ref["el"] and session_select_ref["el"].value != active_session_id["value"]:
+                session_select_ref["el"].value = active_session_id["value"]
+                session_select_ref["el"].update()
+
+        ui.timer(0.35, _mark_select_ready, once=True)
 
         ui.separator().classes('bg-[#1b3040] mb-3 shrink-0')
 
@@ -309,6 +453,70 @@ def render_copilot_panel():
             if input_field_ref["el"]:
                 input_field_ref["el"].value = text
                 asyncio.create_task(handle_send())
+
+        def _refresh_busy_banner():
+            from app.hunts import sourcing_jobs
+            jobs = sourcing_jobs.list_active_jobs()
+            banner = busy_banner_ref["el"]
+            if not banner:
+                return
+            if busy_state["chat"] or jobs:
+                banner.set_visibility(True)
+                job = jobs[0] if jobs else None
+                title = (
+                    job.get("label")
+                    if job
+                    else busy_state.get("label") or "Copilot is working…"
+                )
+                detail = ""
+                if job:
+                    detail = (
+                        f"{job.get('message') or ''} · "
+                        f"added {job.get('added', 0)} · scanned {job.get('scanned', 0)}"
+                    )
+                elif busy_state["chat"]:
+                    detail = "Waiting for Copilot reply… please wait or cancel sourcing jobs only."
+                if busy_banner_ref["label"]:
+                    busy_banner_ref["label"].set_text(title)
+                if busy_banner_ref["detail"]:
+                    busy_banner_ref["detail"].set_text(detail)
+                if send_btn_ref["el"]:
+                    send_btn_ref["el"].props("disable")
+            else:
+                banner.set_visibility(False)
+                if send_btn_ref["el"]:
+                    send_btn_ref["el"].props(remove="disable")
+
+        def _cancel_busy():
+            from app.hunts import sourcing_jobs
+            n = sourcing_jobs.cancel_all()
+            ui.notify(
+                f"Cancel requested for {n} job(s)." if n else "No active crawl to cancel.",
+                type="info",
+            )
+            _refresh_busy_banner()
+
+        with ui.element('div').classes('w-full mb-2').style(
+            'display:none;flex-direction:column;gap:6px;padding:8px 10px;'
+            'background:#132230;border:1px solid #d8941e66;border-radius:9px;flex-shrink:0'
+        ) as busy_banner:
+            busy_banner_ref["el"] = busy_banner
+            busy_banner.set_visibility(False)
+            with ui.row().classes('w-full items-center justify-between gap-2'):
+                with ui.row().classes('items-center gap-2 grow'):
+                    ui.spinner(size='sm', color='orange')
+                    with ui.column().classes('gap-0 grow'):
+                        busy_banner_ref["label"] = ui.label('Working…').classes(
+                            'text-xs font-semibold text-orange-200'
+                        )
+                        busy_banner_ref["detail"] = ui.label('').classes(
+                            'text-[10px] text-slate-400'
+                        )
+                ui.button('Cancel', icon='stop', on_click=_cancel_busy).props(
+                    'text-xs text-orange-200'
+                ).props('flat dense')
+
+        ui.timer(1.0, _refresh_busy_banner)
 
         with ui.element('div').style(
             'display:flex;gap:6px;width:100%;margin-bottom:8px;overflow-x:auto;flex-shrink:0;flex-wrap:nowrap'
@@ -327,11 +535,10 @@ def render_copilot_panel():
             'background:#0e1b28;border:1px solid #1b3040;border-radius:9px;padding:6px'
         ):
             input_field_ref["el"] = ui.input(placeholder='Ask Copilot or click mic...').classes(
-                'grow text-xs text-[#dce7eb] bg-transparent border-none'
+                'grow text-xs text-[#dce7eb] bg-transparent border-none th-copilot-input'
             ).props('borderless dense dark')
 
-            input_field_ref["el"].on('keydown.up', handle_up)
-            input_field_ref["el"].on('keydown.down', handle_down)
+            input_field_ref["el"].on('keydown', handle_input_keydown)
             input_field_ref["el"].on('keydown.enter', handle_send)
 
             ui.button(
@@ -339,7 +546,7 @@ def render_copilot_panel():
                 on_click=lambda: ui.run_javascript('toggleFreeVoiceRecording();')
             ).props('flat round dense').classes('text-[#8195a5] hover:text-[#19d3c5]').tooltip('Voice input')
 
-            ui.button(
+            send_btn_ref["el"] = ui.button(
                 icon='arrow_upward',
                 on_click=handle_send
             ).props('round dense').style(

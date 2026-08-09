@@ -125,7 +125,7 @@ DATABASE_URL = f"sqlite:///{settings.db_path.as_posix()}"
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False, "timeout": 15.0},
-    echo=settings.debug,
+    echo=settings.sql_echo,
 )
 
 @event.listens_for(engine, "connect")
@@ -138,9 +138,18 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 SessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 ScopedSession = scoped_session(SessionFactory)
 
+_db_initialized = False
+
 
 def init_db() -> None:
-    """Initialize SQLite database tables and apply automatic schema migrations."""
+    """Initialize SQLite database tables and apply automatic schema migrations.
+
+    Safe to call from every page — runs create_all / migrations only once per process.
+    """
+    global _db_initialized
+    if _db_initialized:
+        return
+
     import app.hunts.models  # Register models with Base.metadata
     import app.candidates.models  # Register candidate models with Base.metadata
     import app.communications.models  # Register communications models with Base.metadata
@@ -149,11 +158,20 @@ def init_db() -> None:
     # Auto-migration for SQLite missing columns
     try:
         with engine.connect() as conn:
-            # 1. hunt_candidates candidate_id
+            # 1. hunt_candidates candidate_id + source context
             res = conn.exec_driver_sql("PRAGMA table_info(hunt_candidates)").fetchall()
             cols = [r[1] for r in res]
             if res and "candidate_id" not in cols:
                 conn.exec_driver_sql("ALTER TABLE hunt_candidates ADD COLUMN candidate_id INTEGER REFERENCES candidates(id)")
+                conn.commit()
+            if res:
+                hc_expected = {
+                    "source_platform": "VARCHAR(50)",
+                    "source_query": "TEXT",
+                }
+                for col_name, col_type in hc_expected.items():
+                    if col_name not in cols:
+                        conn.exec_driver_sql(f"ALTER TABLE hunt_candidates ADD COLUMN {col_name} {col_type}")
                 conn.commit()
 
             # 2. hunt_search_configs missing columns
@@ -167,6 +185,7 @@ def init_db() -> None:
                     "experience_years_min": "INTEGER",
                     "experience_years_max": "INTEGER",
                     "locations": "VARCHAR(255)",
+                    "industry": "VARCHAR(100)",
                     "remote_policy": "VARCHAR(50)",
                     "target_platforms": "TEXT",
                 }
@@ -177,6 +196,8 @@ def init_db() -> None:
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning(f"Schema migration error ignored: {e}")
+
+    _db_initialized = True
 
 
 def get_db() -> Generator[Session, None, None]:

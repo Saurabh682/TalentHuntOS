@@ -100,7 +100,6 @@ def create_candidate(
                     ec.experience_years = experience_years
                 if skills and ec.profile:
                     try:
-                        import json
                         old_skills = json.loads(ec.profile.skills_json) if ec.profile.skills_json else []
                         merged_skills = list(set(old_skills + skills))
                         ec.profile.skills_json = json.dumps(merged_skills)
@@ -151,7 +150,8 @@ def create_candidate(
 
         if tags:
             for tag_name in tags:
-                tag = CandidateTag(candidate_id=candidate.id, tag_name=tag_name, color="#00d4aa")
+                color = "#19d3c5" if str(tag_name).lower().startswith("hunt:") else "#00d4aa"
+                tag = CandidateTag(candidate_id=candidate.id, tag_name=tag_name, color=color)
                 db.add(tag)
 
         db.commit()

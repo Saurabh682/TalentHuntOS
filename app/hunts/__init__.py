@@ -6,6 +6,7 @@ from app.hunts.models import (
     HuntStage,
     HuntCandidate,
     HuntActivity,
+    PlaybookEntry,
 )
 from app.hunts.service import (
     create_hunt,
@@ -22,6 +23,12 @@ from app.hunts.pipeline import (
     add_stage_to_hunt,
     remove_candidate,
 )
+from app.hunts.playbook import (
+    list_playbook_entries,
+    keep_hunt_candidate,
+    pass_hunt_candidate,
+    add_insight,
+)
 
 __all__ = [
     "TalentHunt",
@@ -29,6 +36,7 @@ __all__ = [
     "HuntStage",
     "HuntCandidate",
     "HuntActivity",
+    "PlaybookEntry",
     "create_hunt",
     "get_hunt",
     "list_hunts",
@@ -40,4 +48,8 @@ __all__ = [
     "get_pipeline_data",
     "add_stage_to_hunt",
     "remove_candidate",
+    "list_playbook_entries",
+    "keep_hunt_candidate",
+    "pass_hunt_candidate",
+    "add_insight",
 ]

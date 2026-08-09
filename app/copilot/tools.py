@@ -1,6 +1,7 @@
 """LangChain tool definitions for TalentHunt OS Copilot."""
 
 import json
+import re
 import uuid
 import logging
 import threading
@@ -121,44 +122,120 @@ def start_talent_hunt(job_title: str, skills: Union[str, List[str]], location: s
 @tool
 def search_candidates(query: str, location: str = "", top_k: int = 10) -> str:
     """USE THIS TOOL ONLY to search the LOCAL DATABASE of candidates already sourced.
-    Do NOT use this tool to search the internet (use search_the_web for internet searches).
-    Performs a semantic vector search over the Candidate database.
-    
+    Do NOT use this tool to search the internet (use source_talent_for_hunt or search_the_web).
+    Filters by role keywords — does NOT dump unrelated candidates from other hunts.
+
     Args:
-        query: Search keywords, role title, or skill queries.
+        query: Search keywords, role title, or skill queries (e.g. 'BD Executive Sales').
         location: Optional location filter.
         top_k: Maximum number of candidate results to return (default: 10).
     """
     from app.infrastructure.db import SessionFactory
-    from app.candidates.models import Candidate
-    from app.candidates.service import create_candidate
-    from sqlalchemy import select
+    from app.candidates.models import Candidate, CandidateTag
+    from sqlalchemy import select, or_
+    from sqlalchemy.orm import selectinload
+
+    # Domains that must not leak across hunts
+    ANIMATION_TOKENS = {
+        "spine", "animator", "animation", "vfx", "rigging", "maya", "blender",
+        "unity", "unreal", "character artist", "2d artist", "3d artist",
+    }
+    SALES_TOKENS = {
+        "bd", "sales", "business development", "account", "pre sales", "presales",
+        "post sales", "postsales", "crm", "bdr", "sdr", "channel", "revenue",
+    }
+
+    q_low = (query or "").lower()
+    wants_sales = any(t in q_low for t in SALES_TOKENS) or "executive" in q_low
+    wants_anim = any(t in q_low for t in ANIMATION_TOKENS)
+    tokens = [t for t in re.split(r"[^a-z0-9]+", q_low) if len(t) > 2]
 
     results_list = []
     try:
+        # Prefer vector search, then re-filter hard
+        vector_ids: List[int] = []
+        try:
+            from app.candidates.search import candidate_search_index
+            hits = candidate_search_index.search_candidates(query, top_k=max(top_k * 3, 20))
+            for h in hits:
+                cid = h.get("candidate_id")
+                if isinstance(cid, int):
+                    vector_ids.append(cid)
+        except Exception as ve:
+            logger.debug("Vector search unavailable: %s", ve)
+
         with SessionFactory() as db:
-            from sqlalchemy.orm import selectinload
-            stmt = select(Candidate).options(selectinload(Candidate.profile)).limit(top_k)
-            cands = list(db.scalars(stmt).all())
-            if cands:
-                for c in cands:
-                    skills_list = []
-                    if c.profile and c.profile.skills_json:
-                        try:
-                            skills_list = json.loads(c.profile.skills_json)
-                        except Exception:
-                            pass
-                    results_list.append({
-                        "id": f"cand_{c.id}",
-                        "name": c.full_name,
-                        "title": c.current_title or (c.profile.headline if c.profile else "Candidate"),
-                        "company": c.current_company or "N/A",
-                        "location": c.location or "Remote",
-                        "skills": skills_list,
-                        "experience": f"{c.experience_years} years" if c.experience_years else "N/A"
-                    })
+            stmt = select(Candidate).options(
+                selectinload(Candidate.profile),
+                selectinload(Candidate.tags),
+            )
+            if vector_ids:
+                stmt = stmt.where(Candidate.id.in_(vector_ids))
             else:
-                pass # Dummy candidate generation removed
+                # Keyword SQL fallback — never unfiltered LIMIT
+                clauses = []
+                for t in tokens[:8]:
+                    like = f"%{t}%"
+                    clauses.append(Candidate.full_name.ilike(like))
+                    clauses.append(Candidate.current_title.ilike(like))
+                    clauses.append(Candidate.current_company.ilike(like))
+                    clauses.append(Candidate.location.ilike(like))
+                if clauses:
+                    stmt = stmt.where(or_(*clauses))
+                else:
+                    stmt = stmt.limit(0)
+            if location.strip():
+                stmt = stmt.where(Candidate.location.ilike(f"%{location.strip()}%"))
+            stmt = stmt.limit(max(top_k * 4, 40))
+            cands = list(db.scalars(stmt).all())
+
+            # Preserve vector rank when present
+            if vector_ids:
+                order = {cid: i for i, cid in enumerate(vector_ids)}
+                cands.sort(key=lambda c: order.get(c.id, 9999))
+
+            for c in cands:
+                title = (c.current_title or "") + " " + (
+                    c.profile.headline if c.profile and c.profile.headline else ""
+                )
+                summary = (c.profile.summary if c.profile and c.profile.summary else "") or ""
+                tag_names = [t.tag_name for t in (c.tags or [])]
+                blob = f"{c.full_name} {title} {summary} {' '.join(tag_names)}".lower()
+
+                if wants_sales and not wants_anim:
+                    if any(t in blob for t in ANIMATION_TOKENS):
+                        continue
+                    if not any(t in blob for t in SALES_TOKENS):
+                        # Require at least one sales-ish signal for sales queries
+                        continue
+                if wants_anim and not wants_sales:
+                    if any(t in blob for t in SALES_TOKENS) and not any(t in blob for t in ANIMATION_TOKENS):
+                        continue
+
+                # Soft token overlap when not in a known domain
+                if tokens and not wants_sales and not wants_anim:
+                    if sum(1 for t in tokens if t in blob) < 1:
+                        continue
+
+                skills_list = []
+                if c.profile and c.profile.skills_json:
+                    try:
+                        skills_list = json.loads(c.profile.skills_json)
+                    except Exception:
+                        pass
+                results_list.append({
+                    "id": f"cand_{c.id}",
+                    "name": c.full_name,
+                    "title": c.current_title or (c.profile.headline if c.profile else "Candidate"),
+                    "company": c.current_company or "N/A",
+                    "location": c.location or "Remote",
+                    "skills": skills_list,
+                    "tags": tag_names,
+                    "experience": f"{c.experience_years} years" if c.experience_years else "N/A",
+                    "linkedin_url": c.linkedin_url or "",
+                })
+                if len(results_list) >= top_k:
+                    break
     except Exception as e:
         logger.error(f"Error querying candidates from DB: {e}")
 
@@ -168,7 +245,12 @@ def search_candidates(query: str, location: str = "", top_k: int = 10) -> str:
         "query": query,
         "count": len(results_list),
         "candidates": results_list,
-        "message": f"Retrieved {len(results_list)} matching candidates from TalentHunt OS database."
+        "message": (
+            f"Retrieved {len(results_list)} role-filtered candidates for '{query}'. "
+            "Unrelated hunt leftovers (e.g. animators on a sales search) were excluded."
+            if results_list
+            else f"No local candidates matched '{query}'. Use source_talent_for_hunt to find LinkedIn/Naukri people."
+        ),
     }
     return json.dumps(result, indent=2)
 
@@ -323,18 +405,36 @@ def search_the_web(query: str) -> str:
 
 @tool
 def verify_candidate_match(candidate_summary: str, required_skills: str) -> str:
-    """USE THIS TOOL ONLY to review and self-reflect on a candidate BEFORE adding them to the database.
-    Pass the candidate's summary and the active hunt's required skills.
-    Returns a PASS or FAIL critique from a secondary Reviewer AI.
+    """USE THIS TOOL ONLY to review a candidate BEFORE adding them to the database.
+    Pass the candidate's summary and the active hunt's required skills / role.
+    Returns PASS or FAIL. Be role-fit oriented — do NOT invent extra requirements
+    (e.g. do not require cold calling unless it is listed in required_skills).
+
+    Args:
+        candidate_summary: Name, title, company, location, experience, short bio.
+        required_skills: Role + skills from the hunt (comma-separated is fine).
     """
     from app.ai.engine import ai_engine
     from langchain_core.messages import SystemMessage, HumanMessage
-    
-    llm = ai_engine.get_llm(model="flash")
-    reviewer_prompt = SystemMessage(content="You are a strict technical recruiter. Review the candidate summary against the required skills. Reply ONLY with 'PASS: <reason>' if they are a strong match, or 'FAIL: <reason>' if they lack critical skills.")
-    
+
+    llm = ai_engine.get_llm()
+    reviewer_prompt = SystemMessage(content=(
+        "You are a pragmatic recruiter screening for ROLE FIT.\n"
+        "Rules:\n"
+        "1. PASS if the person's title/background is clearly related to the target role "
+        "(e.g. Sales, BD, Account Manager for a BD Executive hunt).\n"
+        "2. FAIL only if they are clearly a different profession "
+        "(e.g. Spine Animator / VFX on a Sales hunt), or experience is wildly off.\n"
+        "3. Do NOT invent requirements that are not in Required Skills "
+        "(never demand CRM/cold calling/outbound unless those words appear in Required Skills).\n"
+        "4. Reply ONLY with 'PASS: <one short reason>' or 'FAIL: <one short reason>'."
+    ))
+
     try:
-        review = llm.invoke([reviewer_prompt, HumanMessage(content=f"Required Skills: {required_skills}\nCandidate: {candidate_summary}")]).content
+        review = llm.invoke([
+            reviewer_prompt,
+            HumanMessage(content=f"Required Skills / Role: {required_skills}\nCandidate: {candidate_summary}"),
+        ]).content
         return str(review)
     except Exception as e:
         return f"CRITIC_ERROR: {str(e)}"
@@ -343,16 +443,17 @@ def verify_candidate_match(candidate_summary: str, required_skills: str) -> str:
 def batch_search_the_web(queries: List[str]) -> str:
     """USE THIS TOOL ONLY to run up to 5 web searches simultaneously in parallel.
     Pass a list of search query strings. Much faster than searching sequentially.
+    Prefer people-profile queries with site:linkedin.com/in — NOT job listing pages.
     """
     if len(queries) > 5:
         queries = queries[:5]
-        
+
     import concurrent.futures
-    
+
     def single_search(q: str) -> str:
         res = search_the_web.invoke({"query": q})
         return f"--- Results for '{q}' ---\n{res}\n"
-        
+
     results = []
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
@@ -363,7 +464,295 @@ def batch_search_the_web(queries: List[str]) -> str:
     except Exception as e:
         return f"BATCH_SYSTEM_ERROR: {str(e)}"
 
-COPILOT_TOOLS = [start_talent_hunt, search_candidates, message_candidate, add_candidate_to_database, search_the_web, verify_candidate_match, batch_search_the_web]
+
+@tool
+def source_talent_for_hunt(
+    hunt_id: str,
+    role: str = "",
+    skills: str = "",
+    location: str = "India",
+    target_count: int = 25,
+) -> str:
+    """PRIMARY tool to find real people on LinkedIn/Naukri and add them to a hunt pipeline.
+    Prefer this over search_the_web / batch_search_the_web when the user asks to look for
+    N talents, source LinkedIn candidates, or refill a hunt.
+
+    Uses free DuckDuckGo queries constrained to profile URLs (linkedin.com/in), opens pages,
+    and creates Candidate + HuntCandidate rows. Skips job-listing pages.
+
+    Args:
+        hunt_id: Numeric Talent Hunt database id (from active hunt context).
+        role: Target role (defaults to hunt target_role).
+        skills: Comma-separated skills (defaults to hunt search_config).
+        location: Location (default India).
+        target_count: Desired number of new people to try to add (capped at 40).
+    """
+    from app.infrastructure.db import SessionFactory
+    from app.hunts.service import get_hunt
+    from app.hunts.web_sourcing import source_candidates_for_hunt
+
+    try:
+        numeric_id = int(str(hunt_id).strip()) if str(hunt_id).strip().isdigit() else None
+        if not numeric_id:
+            return json.dumps({
+                "status": "error",
+                "message": "hunt_id must be the numeric database id (e.g. '8').",
+            }, indent=2)
+
+        with SessionFactory() as db:
+            hunt = get_hunt(db, numeric_id)
+            if not hunt:
+                return json.dumps({"status": "error", "message": f"Hunt {numeric_id} not found."}, indent=2)
+            role_label = (role or hunt.target_role or hunt.title or "Professional").strip()
+            loc = (location or hunt.location or "India").strip() or "India"
+            hunt_title = hunt.title
+            skill_str = skills
+            if not skill_str and hunt.search_config and hunt.search_config.required_skills:
+                skill_str = hunt.search_config.required_skills
+
+        target = max(1, min(int(target_count or 25), 40))
+        # max_per_query ~ enough DDG hits across 5 queries
+        per_q = max(6, min(12, (target // 2) + 2))
+
+        from app.hunts import sourcing_jobs
+
+        # New request supersedes prior crawl (never silent no-op)
+        if sourcing_jobs.is_busy():
+            sourcing_jobs.cancel_all()
+            sourcing_jobs.force_clear_running()
+
+        job_id = sourcing_jobs.start_job(
+            hunt_id=numeric_id,
+            hunt_title=hunt_title,
+            label=f"Sourcing {target} · {role_label}",
+        )
+
+        def _bg_source():
+            try:
+                result = source_candidates_for_hunt(
+                    numeric_id,
+                    role=role_label,
+                    skills=skill_str or "",
+                    location=loc,
+                    hunt_title=hunt_title,
+                    max_per_query=per_q,
+                    enrich_pages=True,
+                    verify_with_ai=True,
+                    job_id=job_id,
+                    target_added=target,
+                )
+                logger.info(
+                    "Background source_talent_for_hunt hunt=%s job=%s result=%s",
+                    numeric_id,
+                    job_id,
+                    {k: result.get(k) for k in ("status", "added", "scanned", "skipped_exp", "skipped_ai")},
+                )
+            except Exception as bg_exc:
+                logger.error("Background source_talent_for_hunt failed: %s", bg_exc)
+                sourcing_jobs.finish_job(
+                    job_id, status="error", message=str(bg_exc), error=str(bg_exc)
+                )
+
+        threading.Thread(
+            target=_bg_source,
+            daemon=True,
+            name=f"source-hunt-{numeric_id}",
+        ).start()
+
+        return json.dumps({
+            "status": "started",
+            "job_id": job_id,
+            "hunt_id": numeric_id,
+            "hunt_title": hunt_title,
+            "role": role_label,
+            "location": loc,
+            "requested": target,
+            "message": (
+                f"Started job {job_id}: Playwright-open + AI-verify for ~{target} "
+                f"LinkedIn people on '{hunt_title}'. "
+                "Tell the user to watch the Copilot busy banner (Cancel available) "
+                "and refresh Pipeline when it finishes."
+            ),
+        }, indent=2)
+    except Exception as e:
+        logger.error("source_talent_for_hunt failed: %s", e)
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+@tool
+def consult_sourcing_playbook(role: str = "", limit: int = 10) -> str:
+    """Read the shared global sourcing playbook for what worked / didn't for a role.
+    Use before designing new LinkedIn/Naukri queries so you reuse team learnings.
+
+    Args:
+        role: Target role or hunt title keywords (e.g. 'BD Executive', 'Spine Animator').
+        limit: Max tips to return (default 10).
+    """
+    from app.infrastructure.db import SessionFactory
+    from app.hunts.playbook import get_playbook_tips_for_role, list_playbook_entries
+
+    try:
+        with SessionFactory() as db:
+            if role and role.strip():
+                tips = get_playbook_tips_for_role(db, role.strip(), limit=max(1, min(int(limit or 10), 25)))
+            else:
+                tips = [
+                    {
+                        "type": e.entry_type,
+                        "outcome": e.insight_outcome,
+                        "role": e.role_context,
+                        "platform": e.platform,
+                        "query": e.query_text,
+                        "candidate": e.candidate_name,
+                        "title": e.candidate_title,
+                        "note": e.note,
+                        "hunt": e.hunt_title,
+                        "author": e.author_name,
+                    }
+                    for e in list_playbook_entries(db, limit=max(1, min(int(limit or 10), 25)))
+                ]
+        if not tips:
+            return json.dumps({
+                "status": "empty",
+                "message": "No playbook entries yet. Recruiters add Keep/Pass from the pipeline and insights on /playbook.",
+            }, indent=2)
+        return json.dumps({"status": "success", "count": len(tips), "tips": tips}, indent=2)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+@tool
+def remove_candidates_from_hunt(
+    hunt_id: str = "",
+    hunt_title: str = "",
+    name_contains: str = "",
+    stage_name: str = "",
+    confirm: bool = False,
+) -> str:
+    """Remove candidates from a Talent Hunt pipeline (Kanban enrollments only).
+    Does NOT permanently delete master candidate profiles from the Candidates page.
+    USE when the user asks to clear, remove, or drop candidates from a hunt (e.g. sales/BD hunt).
+
+    Args:
+        hunt_id: Numeric hunt database id (preferred when known from active hunt context).
+        hunt_title: Hunt title substring to resolve the hunt if hunt_id is empty (e.g. 'BD', 'Sales', 'Spine').
+        name_contains: Optional filter — only remove candidates whose name contains this text.
+        stage_name: Optional filter — only remove from a stage (e.g. 'Sourced').
+        confirm: Must be True to actually delete. If False, returns a dry-run preview count.
+    """
+    from app.infrastructure.db import SessionFactory
+    from app.hunts.service import get_hunt, list_hunts
+    from app.hunts.pipeline import clear_hunt_candidates
+    from app.hunts.models import HuntCandidate, HuntStage
+    from sqlalchemy import select, func
+
+    try:
+        with SessionFactory() as db:
+            hunt = None
+            if hunt_id and str(hunt_id).isdigit():
+                hunt = get_hunt(db, int(hunt_id))
+            if not hunt and (hunt_title or "").strip():
+                needle = hunt_title.strip().lower()
+                hunts = list_hunts(db)
+                matches = [
+                    h for h in hunts
+                    if needle in (h.title or "").lower()
+                    or needle in (h.target_role or "").lower()
+                ]
+                if not matches:
+                    matches = [
+                        h for h in hunts
+                        if any(
+                            tok.startswith(needle) or needle in tok
+                            for tok in ((h.title or "") + " " + (h.target_role or "")).lower().split()
+                        )
+                    ]
+                if len(matches) == 1:
+                    hunt = matches[0]
+                elif len(matches) > 1:
+                    return json.dumps({
+                        "status": "ambiguous",
+                        "message": "Multiple hunts matched. Pass a specific hunt_id.",
+                        "matches": [
+                            {"id": h.id, "title": h.title, "role": h.target_role}
+                            for h in matches[:10]
+                        ],
+                    }, indent=2)
+
+            if not hunt:
+                return json.dumps({
+                    "status": "error",
+                    "message": (
+                        "Could not find hunt. Pass hunt_id from active hunt context, "
+                        "or hunt_title like 'BD-Executive' / 'Sales'."
+                    ),
+                }, indent=2)
+
+            total = int(
+                db.scalar(
+                    select(func.count()).select_from(HuntCandidate).where(
+                        HuntCandidate.hunt_id == hunt.id
+                    )
+                )
+                or 0
+            )
+
+            if not confirm:
+                rows = list(
+                    db.scalars(select(HuntCandidate).where(HuntCandidate.hunt_id == hunt.id)).all()
+                )
+                needle = (name_contains or "").strip().lower()
+                stage_needle = (stage_name or "").strip().lower()
+                would = []
+                for hc in rows:
+                    if needle and needle not in (hc.full_name or "").lower():
+                        continue
+                    if stage_needle:
+                        stage = db.get(HuntStage, hc.stage_id) if hc.stage_id else None
+                        if not stage or stage_needle not in (stage.name or "").lower():
+                            continue
+                    would.append(hc.full_name or f"id:{hc.id}")
+                return json.dumps({
+                    "status": "preview",
+                    "hunt_id": hunt.id,
+                    "hunt_title": hunt.title,
+                    "pipeline_total": total,
+                    "would_remove": len(would),
+                    "sample_names": would[:20],
+                    "message": (
+                        f"Preview only. Re-call with confirm=true to remove "
+                        f"{len(would)} candidate(s) from '{hunt.title}'."
+                    ),
+                }, indent=2)
+
+            result = clear_hunt_candidates(
+                db,
+                hunt.id,
+                name_contains=name_contains or None,
+                stage_name=stage_name or None,
+            )
+            result["status"] = "success"
+            result["message"] = (
+                f"Removed {result['removed']} candidate enrollment(s) from hunt "
+                f"'{result.get('hunt_title')}'. Master profiles on Candidates page were kept."
+            )
+            return json.dumps(result, indent=2)
+    except Exception as e:
+        logger.error("remove_candidates_from_hunt failed: %s", e)
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+COPILOT_TOOLS = [
+    start_talent_hunt,
+    search_candidates,
+    message_candidate,
+    add_candidate_to_database,
+    search_the_web,
+    verify_candidate_match,
+    batch_search_the_web,
+    source_talent_for_hunt,
+    consult_sourcing_playbook,
+    remove_candidates_from_hunt,
+]
 def get_copilot_tools():
     """Return list of active Copilot tools."""
     return COPILOT_TOOLS

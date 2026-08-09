@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "graphify": {
+      "command": "C:\\Users\\Kumar\\AppData\\Roaming\\Python\\Python313\\Scripts\\graphify-mcp.exe",
+      "args": ["D:\\VibeCode\\JobSearch_Platform\\TalentHuntOS\\graphify-out\\graph.json"]
+    }
+  }
+}
