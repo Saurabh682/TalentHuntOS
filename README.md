@@ -11,6 +11,10 @@
 *Behind every resume is a human story. Behind every company is a mission waiting for the right person.*  
 **TalentHunt OS** reimagines recruitment software from the ground up—moving away from slow, clunky legacy ATS tools toward a fast, fluid, dark-mode desktop OS powered by multi-provider AI agents.
 
+<br/>
+
+![TalentHunt OS Dashboard — AI Recruiter Copilot](docs/images/dashboard.png)
+
 </div>
 
 ---
