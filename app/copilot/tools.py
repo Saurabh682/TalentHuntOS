@@ -2,7 +2,6 @@
 
 import json
 import re
-import uuid
 import logging
 import threading
 from langchain_core.tools import tool
@@ -18,106 +17,75 @@ active_hunts_lock = threading.Lock()
 from typing import Union, List
 
 @tool
-def start_talent_hunt(job_title: str, skills: Union[str, List[str]], location: str = "Remote") -> str:
-    """USE THIS TOOL ONLY to CREATE A NEW talent search campaign/hunt.
-    Do NOT use this tool if a hunt is already active or if the user is just asking a question.
-    Creates a Talent Hunt campaign in the database and triggers multi-agent sourcing.
-    
-    Args:
-        job_title: The target position title (e.g. 'Senior Python Engineer').
-        skills: List or comma-separated string of required skills.
-        location: Geographic location or work arrangement.
-    """
-    from app.infrastructure.db import SessionFactory
-    from app.hunts.service import create_hunt
-    from app.hunts.pipeline import add_candidate_to_hunt
-    from app.hunts.models import TalentHunt
-    from sqlalchemy import select, func
+def start_talent_hunt(
+    job_title: str,
+    skills: Union[str, List[str]] = "",
+    location: str = "India",
+    experience: str = "",
+    salary_range: str = "",
+    industry: str = "",
+    description: str = "",
+    hunt_title: str = "",
+) -> str:
+    """USE THIS TOOL ONLY to CREATE A NEW talent search campaign/hunt (same fields as Create Hunt UI).
+    Creates an Active hunt and queues LinkedIn/Naukri sourcing via Copilot.
+    Do NOT use this tool if a hunt is already active and the user only wants to edit or re-source —
+    use update_talent_hunt or source_talent_for_hunt instead.
 
+    Args:
+        job_title: Target role title (e.g. 'BD Executive').
+        skills: List or comma-separated required skills.
+        location: Geographic location (default India).
+        experience: Optional band like '4-5 years' or '5+'.
+        salary_range: Optional salary band.
+        industry: Optional industry (e.g. SaaS).
+        description: Optional role summary.
+        hunt_title: Optional campaign title (defaults to '{job_title} Hunt').
+    """
     if isinstance(skills, list):
         skill_list = [str(s).strip() for s in skills if str(s).strip()]
+        skills_str = ", ".join(skill_list)
     else:
-        skill_list = [s.strip() for s in str(skills).split(",") if s.strip()]
-        
-    hunt_id = f"hunt_{uuid.uuid4().hex[:8]}"
-    
-    db_hunt_id = None
-    message = ""
+        skills_str = str(skills or "").strip()
+        skill_list = [s.strip() for s in skills_str.split(",") if s.strip()]
+
+    title = (hunt_title or "").strip() or f"{job_title.strip()} Hunt"
+    loc = (location or "").strip() or "India"
+
     try:
-        with SessionFactory() as db:
-            existing_hunt = db.execute(
-                select(TalentHunt).where(
-                    func.lower(TalentHunt.target_role) == job_title.lower(),
-                    func.lower(TalentHunt.location) == location.lower(),
-                    TalentHunt.status == "Active"
-                )
-            ).scalars().first()
+        from app.hunts.launch import launch_hunt_and_start_sourcing
 
-            if existing_hunt:
-                db_hunt_id = existing_hunt.id
-                message = f"Found existing Talent Hunt campaign '{job_title} Hunt' (DB ID: {db_hunt_id}) for {location}. Reused existing campaign."
-            else:
-                new_hunt = create_hunt(
-                    db=db,
-                    title=f"{job_title} Hunt",
-                    target_role=job_title,
-                    location=location,
-                    search_config={"required_skills": ", ".join(skill_list), "locations": location}
-                )
-                if new_hunt:
-                    db_hunt_id = new_hunt.id
-                message = f"Successfully created Talent Hunt campaign '{job_title} Hunt' (DB ID: {db_hunt_id}) on TalentHunt OS platform!"
-    except Exception as e:
-        logger.error(f"Error persisting hunt to database: {e}")
-
-    with active_hunts_lock:
-        active_hunts[hunt_id] = {
+        result = launch_hunt_and_start_sourcing(
+            title=title,
+            target_role=(job_title or "").strip() or None,
+            location=loc,
+            salary_range=(salary_range or "").strip() or None,
+            description=(description or "").strip() or None,
+            required_skills=skills_str or None,
+            experience=(experience or "").strip() or None,
+            industry=(industry or "").strip() or None,
+        )
+        payload = {
+            "status": "success",
+            "action": "start_talent_hunt",
+            "db_hunt_id": result.get("hunt_id"),
+            "hunt_id": result.get("hunt_id"),
             "job_title": job_title,
             "skills": skill_list,
-            "location": location,
-            "db_id": db_hunt_id,
-            "status": "completed"
+            "location": result.get("location") or loc,
+            "experience": (experience or "").strip() or None,
+            "salary_range": (salary_range or "").strip() or None,
+            "industry": (industry or "").strip() or None,
+            "message": (
+                f"Launched '{title}' (DB ID: {result.get('hunt_id')}). "
+                "Sourcing prompt queued for LinkedIn + Naukri. "
+                f"Open /hunts/{result.get('hunt_id')}/pipeline to watch progress."
+            ),
         }
-
-    result = {
-        "status": "success",
-        "action": "start_talent_hunt",
-        "hunt_id": hunt_id,
-        "db_hunt_id": db_hunt_id,
-        "job_title": job_title,
-        "skills": skill_list,
-        "location": location,
-        "message": message
-    }
-    # Task 2: Multi-Agent Orchestration (The Virtual Agency)
-    import threading
-    skills_str = ", ".join(skill_list)
-    def virtual_agency_background_loop(hid: str, role: str, sk: str, loc: str):
-        import time
-        from app.ai.engine import ai_engine
-        # Simulate LangGraph multi-agent loop
-        time.sleep(2)
-        try:
-            logger.info(f"Virtual Agency [Hunt {hid}]: Spinning up Sourcer & Screener Agents for {role}...")
-            # 1. Sourcer Agent (Parallel)
-            queries = [
-                f'site:linkedin.com/in/ "{role}" {loc}',
-                f'site:naukri.com "{role}" {sk}',
-                f'"{sk}" {role} resume {loc}',
-                f'site:linkedin.com/in/ "{role}" India',
-                f'site:naukri.com "{role}" India',
-            ]
-            batch_search_the_web.invoke({"queries": queries})
-
-            # 2. Screener Agent (Critic)
-            logger.info(f"Virtual Agency [Hunt {hid}]: Found candidates, running Critic verification...")
-        except Exception as e:
-            logger.error(f"Virtual Agency Error: {str(e)}")
-
-    agency_thread = threading.Thread(target=virtual_agency_background_loop, args=(hunt_id, job_title, skills_str, location), daemon=True)
-    agency_thread.start()
-
-    return json.dumps(result, indent=2)
+        return json.dumps(payload, indent=2)
+    except Exception as e:
+        logger.error("start_talent_hunt failed: %s", e)
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
 
 @tool
 def search_candidates(query: str, location: str = "", top_k: int = 10) -> str:
@@ -753,6 +721,13 @@ COPILOT_TOOLS = [
     consult_sourcing_playbook,
     remove_candidates_from_hunt,
 ]
+
+# Hunt lifecycle + pipeline triage (UI parity)
+from app.copilot.mgmt_tools import MGMT_TOOLS
+
+COPILOT_TOOLS = COPILOT_TOOLS + list(MGMT_TOOLS)
+
+
 def get_copilot_tools():
     """Return list of active Copilot tools."""
     return COPILOT_TOOLS

@@ -1,21 +1,53 @@
 ---
-description: graphify knowledge graph context
+description: Always orient via Graphify before exploring or changing TalentHunt OS code
 alwaysApply: true
 ---
 
-This project has a graphify knowledge graph at graphify-out/.
+# Graphify-first access (mandatory)
 
-**MANDATORY: Before using Read, Grep, Glob, or Bash to explore the codebase, you MUST run graphify first:**
-- `graphify query "<question>"` — scoped subgraph for any codebase or architecture question
-- `graphify path "<A>" "<B>"` — dependency path between two symbols
-- `graphify explain "<concept>"` — all nodes related to a concept
+This project’s knowledge graph lives at `graphify-out/`. Treat it as the **primary** way to understand and navigate the codebase.
 
-This applies to YOU and to every subagent you spawn. Include this rule explicitly in every subagent prompt that involves code exploration. Do not skip graphify because files are "already known" or because you are executing a plan — the graph surfaces cross-file dependencies and INFERRED edges that grep and Read cannot find.
+## Before any codebase work
 
-Only use Read/Grep/Glob directly when:
-1. graphify has already oriented you and you need to modify or debug specific lines
-2. `graphify-out/graph.json` does not exist yet
+You MUST run Graphify **before** Read / Grep / Glob / shell exploration for architecture, “where is X”, audits, debugging cross-file flow, or planning changes:
 
-- If `graphify-out/wiki/index.md` exists, navigate it instead of reading raw files
-- Read `graphify-out/GRAPH_REPORT.md` only for broad architecture review when query/path/explain do not surface enough context
-- After modifying code files, run `graphify update .` to keep the graph current (AST-only, no API cost)
+```bash
+graphify query "<question>"
+graphify path "<A>" "<B>"
+graphify explain "<concept>"
+```
+
+If Graphify MCP tools are available (`graph_search`, `graph_path`, etc.), prefer those equivalently.
+
+**Do not skip Graphify** because files feel “already known”, because a plan exists, or because a prior turn already grepped. The graph includes INFERRED edges and cross-file hubs that grep will miss.
+
+## After Graphify orients you
+
+Then use Read/Grep/Glob only to:
+
+1. Edit or debug specific lines Graphify pointed to
+2. Verify a concrete symbol/file after a query/path/explain
+
+## Exceptions (only these)
+
+- `graphify-out/graph.json` does not exist yet → run `graphify extract . --code-only` (or `/graphify .`) first, then continue
+- Pure non-code tasks (commit message only, user pasted a full file, rename chat) need no Graphify
+
+## Keep the graph fresh
+
+After you modify code files in this repo, run:
+
+```bash
+graphify update .
+```
+
+(AST-only, no API cost.)
+
+## Subagents
+
+Every subagent that explores code MUST be told to use Graphify first (include this rule in its prompt).
+
+## Optional navigation
+
+- Prefer `graphify-out/wiki/index.md` when it exists
+- Use `graphify-out/GRAPH_REPORT.md` only for broad architecture review when query/path/explain are not enough
