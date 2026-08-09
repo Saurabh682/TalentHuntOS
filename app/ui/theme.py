@@ -767,6 +767,20 @@ button:disabled, .q-btn--disabled, input:disabled {{
   width: 28px !important;
 }}
 
+.th-copilot-input,
+.th-copilot-input .q-field__native,
+.th-copilot-input input {{
+  font-size: 14px !important;
+  line-height: 1.45 !important;
+}}
+
+.th-copilot-input .q-field__native::placeholder,
+.th-copilot-input input::placeholder {{
+  font-size: 14px !important;
+  color: #8da2b2 !important;
+  opacity: 1 !important;
+}}
+
 @media (max-width: 1050px) {{
   .th-copilot-panel {{ display: none !important; }}
 }}

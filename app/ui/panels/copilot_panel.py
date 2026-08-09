@@ -533,11 +533,13 @@ def render_copilot_panel():
 
         with ui.element('div').style(
             'display:flex;align-items:center;gap:8px;width:100%;flex-shrink:0;'
-            'background:#0e1b28;border:1px solid #1b3040;border-radius:9px;padding:6px'
+            'background:#0e1b28;border:1px solid #1b3040;border-radius:9px;padding:8px 10px'
         ):
             input_field_ref["el"] = ui.input(placeholder='Ask Copilot or click mic...').classes(
-                'grow text-xs text-[#dce7eb] bg-transparent border-none th-copilot-input'
-            ).props('borderless dense dark')
+                'grow text-[#dce7eb] bg-transparent border-none th-copilot-input'
+            ).props('borderless dark').style(
+                'font-size:14px;line-height:1.4'
+            )
 
             input_field_ref["el"].on('keydown', handle_input_keydown)
             input_field_ref["el"].on('keydown.enter', handle_send)
