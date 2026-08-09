@@ -619,3 +619,76 @@ MGMT_TOOLS = [
     move_pipeline_candidate,
     assign_candidate_to_hunt,
 ]
+
+
+@tool
+def read_profile_page(url: str, timeout_ms: int = 25000) -> str:
+    """Open a LinkedIn/Naukri/profile URL in Playwright, expand the page, and return readable text + heuristics.
+    Same capability as Candidate Detail "Open & read page". Use before verifying or adding a web candidate.
+
+    Args:
+        url: Full profile URL (prefer linkedin.com/in/...).
+        timeout_ms: Navigation timeout (default 25000).
+    """
+    try:
+        from app.browser.page_reader import enrich_profile_from_url
+
+        raw = enrich_profile_from_url(url, timeout_ms=int(timeout_ms or 25000))
+        # Keep payload chat-friendly
+        text = (raw.get("summary") or raw.get("text") or "")[:3500]
+        payload = {
+            "status": raw.get("status") or ("success" if text else "error"),
+            "action": "read_profile_page",
+            "url": raw.get("final_url") or raw.get("url") or url,
+            "title": raw.get("title"),
+            "headline": raw.get("headline"),
+            "experience_years": raw.get("experience_years"),
+            "senior_title": raw.get("senior_title"),
+            "summary": text,
+            "error": raw.get("error"),
+        }
+        if not text and not payload.get("error"):
+            payload["status"] = "empty"
+            payload["message"] = "Page opened but little readable text was extracted (login wall or empty DOM)."
+        return json.dumps(payload, indent=2)
+    except Exception as e:
+        logger.exception("read_profile_page failed")
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+@tool
+def ask_talent_pool(question: str) -> str:
+    """Ask a natural-language question over the local Candidates talent pool (LlamaIndex RAG).
+    Same capability as Candidates page "Ask RAG". Use for questions like who has React + 5 years in India.
+
+    Args:
+        question: Recruiter question about people already in the database.
+    """
+    q = (question or "").strip()
+    if not q:
+        return json.dumps({"status": "error", "message": "question is required."}, indent=2)
+    try:
+        from app.infrastructure.db import SessionFactory
+        from app.candidates.rag import CandidateRAGPipeline
+
+        with SessionFactory() as db:
+            result = CandidateRAGPipeline().query_candidate_database(q, db)
+        return json.dumps({
+            "status": "success",
+            "action": "ask_talent_pool",
+            "query": result.get("query"),
+            "answer": result.get("answer"),
+            "sources": result.get("sources") or [],
+        }, indent=2)
+    except Exception as e:
+        logger.exception("ask_talent_pool failed")
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+ENRICH_TOOLS = [
+    read_profile_page,
+    ask_talent_pool,
+]
+
+# Back-compat: export enrich tools alongside mgmt for a single import list
+MGMT_TOOLS = list(MGMT_TOOLS) + list(ENRICH_TOOLS)

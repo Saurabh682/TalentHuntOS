@@ -37,6 +37,10 @@ REMOVE / CLEAR:
 
 VERIFY:
 - Use `verify_candidate_match` sparingly. Pass the hunt's actual required skills — do not invent CRM/cold-calling requirements. PASS role-fit titles (Sales, BD, Account Manager) for BD hunts.
+- Before adding a web profile, prefer `read_profile_page` on the LinkedIn/Naukri URL (same as Open & read page in the UI).
+
+TALENT POOL Q&A:
+- For questions about people already in the Candidates DB ("who has CRM experience?"), call `ask_talent_pool`. Do not invent names.
 
 OTHER:
 - DEFAULT location: India unless specified. Prefer LinkedIn people profiles.
