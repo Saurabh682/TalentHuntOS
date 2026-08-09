@@ -475,7 +475,7 @@ def render_copilot_panel():
                         f"added {job.get('added', 0)} · scanned {job.get('scanned', 0)}"
                     )
                 elif busy_state["chat"]:
-                    detail = "Waiting for Copilot reply… please wait or cancel sourcing jobs only."
+                    detail = "Waiting for Copilot reply… Cancel stops LinkedIn crawls only."
                 if busy_banner_ref["label"]:
                     busy_banner_ref["label"].set_text(title)
                 if busy_banner_ref["detail"]:
@@ -497,8 +497,9 @@ def render_copilot_panel():
             _refresh_busy_banner()
 
         with ui.element('div').classes('w-full mb-2').style(
-            'display:none;flex-direction:column;gap:6px;padding:8px 10px;'
-            'background:#132230;border:1px solid #d8941e66;border-radius:9px;flex-shrink:0'
+            'flex-direction:column;gap:6px;padding:8px 10px;'
+            'background:#3d2a0f;border:1px solid #f0a020;'
+            'border-radius:9px;flex-shrink:0'
         ) as busy_banner:
             busy_banner_ref["el"] = busy_banner
             busy_banner.set_visibility(False)
@@ -510,11 +511,11 @@ def render_copilot_panel():
                             'text-xs font-semibold text-orange-200'
                         )
                         busy_banner_ref["detail"] = ui.label('').classes(
-                            'text-[10px] text-slate-400'
+                            'text-[10px] text-orange-100/70'
                         )
                 ui.button('Cancel', icon='stop', on_click=_cancel_busy).props(
-                    'text-xs text-orange-200'
-                ).props('flat dense')
+                    'flat dense'
+                ).classes('text-xs text-orange-100')
 
         ui.timer(1.0, _refresh_busy_banner)
 
