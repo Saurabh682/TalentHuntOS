@@ -38,6 +38,10 @@ REMOVE / CLEAR:
 VERIFY:
 - Use `verify_candidate_match` sparingly. Pass the hunt's actual required skills — do not invent CRM/cold-calling requirements. PASS role-fit titles (Sales, BD, Account Manager) for BD hunts.
 - Before adding a web profile, prefer `read_profile_page` on the LinkedIn/Naukri URL (same as Open & read page in the UI).
+- Never invent years of experience or skills. If unknown, omit them (experience_years=-1, empty skills).
+- When adding candidates during a hunt session, ALWAYS pass hunt_id so they land on the Kanban (no orphans).
+- If a tool returns SYSTEM_ERROR / search_failed, tell the user the tool failed — do NOT claim "no candidates exist".
+- message_candidate is DRAFT ONLY — never claim you sent outreach.
 
 TALENT POOL Q&A:
 - For questions about people already in the Candidates DB ("who has CRM experience?"), call `ask_talent_pool`. Do not invent names.

@@ -75,33 +75,81 @@ def create_candidate(
     """
     try:
         from sqlalchemy import func
+
+        # Identity: LinkedIn URL wins (prevents John-Smith merges across different people)
+        if linkedin_url and linkedin_url.strip():
+            url_key = linkedin_url.strip().lower().split("?")[0].rstrip("/")
+            slug = url_key
+            if "/in/" in url_key:
+                slug = url_key.split("/in/", 1)[1].strip("/")
+            url_matches = list(
+                db.scalars(
+                    select(Candidate).where(
+                        Candidate.linkedin_url.isnot(None),
+                        Candidate.linkedin_url.ilike(f"%{slug}%") if slug else Candidate.linkedin_url.ilike(f"%{url_key}%"),
+                    ).limit(20)
+                ).all()
+            )
+            for ec in url_matches:
+                existing_url = (ec.linkedin_url or "").strip().lower().split("?")[0].rstrip("/")
+                if existing_url and (existing_url == url_key or (slug and f"/in/{slug}" in existing_url)):
+                    # Enrich / upsert — never invent years; only write when provided
+                    if current_title:
+                        ec.current_title = current_title
+                    if current_company:
+                        ec.current_company = current_company
+                    if location and not ec.location:
+                        ec.location = location
+                    if experience_years is not None and experience_years > 0:
+                        ec.experience_years = experience_years
+                    if summary and ec.profile:
+                        if not ec.profile.summary or len(summary) > len(ec.profile.summary or ""):
+                            ec.profile.summary = summary
+                    if skills and ec.profile:
+                        try:
+                            old_skills = json.loads(ec.profile.skills_json) if ec.profile.skills_json else []
+                            merged_skills = list(dict.fromkeys([*old_skills, *skills]))
+                            ec.profile.skills_json = json.dumps(merged_skills)
+                        except Exception:
+                            pass
+                    if linkedin_url and not ec.linkedin_url:
+                        ec.linkedin_url = linkedin_url
+                    db.commit()
+                    db.refresh(ec)
+                    return ec
+
         stmt = select(Candidate).where(func.lower(Candidate.full_name) == full_name.strip().lower()).with_for_update()
         existing = db.scalars(stmt).all()
         for ec in existing:
             # Identity Resolution Chaos check ("John Smith" problem)
-            if linkedin_url and ec.linkedin_url and linkedin_url.strip().lower() != ec.linkedin_url.strip().lower():
+            if linkedin_url and ec.linkedin_url and linkedin_url.strip().lower().split("?")[0] != ec.linkedin_url.strip().lower().split("?")[0]:
                 continue
             if github_url and ec.github_url and github_url.strip().lower() != ec.github_url.strip().lower():
                 continue
                 
             is_match = False
-            if current_company and ec.current_company and current_company.lower() in ec.current_company.lower():
+            if linkedin_url and ec.linkedin_url:
+                is_match = True
+            elif current_company and ec.current_company and current_company.lower() in ec.current_company.lower():
                 is_match = True
             elif location and ec.location and location.lower() in ec.location.lower():
                 is_match = True
-            elif not current_company and not ec.current_company:
+            elif not current_company and not ec.current_company and not linkedin_url:
                 is_match = True
                 
             if is_match:
                 # Enrich existing profile
-                if current_title and not ec.current_title:
+                if current_title and (not ec.current_title or len(current_title) > len(ec.current_title or "")):
                     ec.current_title = current_title
-                if experience_years and (not ec.experience_years or ec.experience_years < experience_years):
-                    ec.experience_years = experience_years
+                if experience_years is not None and experience_years > 0:
+                    if not ec.experience_years or ec.experience_years < experience_years:
+                        ec.experience_years = experience_years
+                if linkedin_url and not ec.linkedin_url:
+                    ec.linkedin_url = linkedin_url
                 if skills and ec.profile:
                     try:
                         old_skills = json.loads(ec.profile.skills_json) if ec.profile.skills_json else []
-                        merged_skills = list(set(old_skills + skills))
+                        merged_skills = list(dict.fromkeys([*old_skills, *skills]))
                         ec.profile.skills_json = json.dumps(merged_skills)
                     except Exception:
                         pass

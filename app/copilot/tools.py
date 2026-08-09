@@ -227,18 +227,18 @@ recently_messaged = set()
 
 @tool
 def message_candidate(candidate_id: str, message: str) -> str:
-    """Draft or queue an outreach message/email to a specific candidate.
+    """DRAFT ONLY — queue an outreach message for human approval. Never sends email/LinkedIn automatically.
     
     Args:
         candidate_id: ID of the target candidate (e.g. 'cand_101').
-        message: The message body content to send or draft.
+        message: The message body content to draft (not send).
     """
     global recently_messaged
     if candidate_id in recently_messaged:
         return json.dumps({
             "status": "error",
             "action": "message_candidate",
-            "message": f"Anti-spam protection triggered: A message was already queued for candidate {candidate_id} in this session."
+            "message": f"Anti-spam protection triggered: A message was already drafted for candidate {candidate_id} in this session."
         }, indent=2)
         
     recently_messaged.add(candidate_id)
@@ -248,95 +248,156 @@ def message_candidate(candidate_id: str, message: str) -> str:
         "action": "message_candidate",
         "candidate_id": candidate_id,
         "outreach_status": "drafted_requires_approval",
-        "message": f"Message drafted for candidate {candidate_id}. Awaiting human approval before sending."
+        "sent": False,
+        "message": (
+            f"DRAFT only for candidate {candidate_id}. "
+            "Nothing was sent. Awaiting human approval on the Communications page before any send."
+        ),
     }
     return json.dumps(result, indent=2)
 
 @tool
 def add_candidate_to_database(
     full_name: str, 
-    current_title: str,
-    skills: Union[str, List[str]],
-    location: str = "Remote",
+    current_title: str = "",
+    skills: Union[str, List[str]] = "",
+    location: str = "India",
     current_company: str = "",
-    experience_years: float = 0.0,
+    experience_years: float = -1.0,
     summary: str = "",
-    hunt_id: str = None
+    hunt_id: str = "",
+    linkedin_url: str = "",
 ) -> str:
-    """USE THIS TOOL ONLY to save a newly found candidate from the web into the local database.
-    Do NOT use this tool if the candidate is already in the database.
-    
+    """Save or upsert a candidate into the local database and link them to the active hunt pipeline.
+    Prefer passing hunt_id (required when chatting inside a hunt session) and linkedin_url for identity.
+
+    Rules:
+    - Do NOT invent experience_years — pass -1 if unknown (never fabricate a number).
+    - Do NOT invent skills not seen on the profile — pass empty if unknown.
+    - Always pass hunt_id when an active hunt is in context to avoid orphaned candidates.
+
     Args:
         full_name: The candidate's full name.
-        current_title: Their current job title.
-        skills: List or comma-separated string of their skills.
-        location: Geographic location or Remote.
+        current_title: Their current job title (empty if unknown).
+        skills: List or comma-separated skills evidenced on the profile (empty if unknown).
+        location: Geographic location (default India).
         current_company: Their current employer.
-        experience_years: Estimated years of experience.
-        summary: A brief professional summary.
-        hunt_id: Optional. The ID of the active Talent Hunt (e.g., '12' or 'hunt_1abc') to link this candidate to the Kanban pipeline.
+        experience_years: Years of experience ONLY if evidenced; use -1 if unknown.
+        summary: Brief professional summary from the profile text.
+        hunt_id: Active Talent Hunt database id (e.g. '8'). Auto-filled from hunt session when possible.
+        linkedin_url: Profile URL for identity / upsert (strongly preferred).
     """
     from app.infrastructure.db import SessionFactory
     from app.candidates.service import create_candidate
     from app.hunts.pipeline import add_candidate_to_hunt
+    from app.hunts.service import get_hunt
+    from app.copilot.session_ctx import get_active_hunt_id
     
     if isinstance(skills, list):
         skill_list = [str(s).strip() for s in skills if str(s).strip()]
     else:
         skill_list = [s.strip() for s in str(skills).split(",") if s.strip()]
+
+    # Treat 0 / negative as unknown — never persist invented zeros as real experience
+    years_val = None
+    try:
+        if experience_years is not None and float(experience_years) > 0:
+            years_val = float(experience_years)
+    except (TypeError, ValueError):
+        years_val = None
+
+    numeric_hunt_id = None
+    if hunt_id and str(hunt_id).strip().isdigit():
+        numeric_hunt_id = int(str(hunt_id).strip())
+    elif hunt_id and "hunt_" in str(hunt_id):
+        with active_hunts_lock:
+            if hunt_id in active_hunts:
+                numeric_hunt_id = active_hunts[hunt_id].get("db_id")
+    if not numeric_hunt_id:
+        numeric_hunt_id = get_active_hunt_id()
     
     try:
         with SessionFactory() as db:
+            if numeric_hunt_id and not get_hunt(db, numeric_hunt_id):
+                return json.dumps({
+                    "status": "error",
+                    "message": f"Hunt {numeric_hunt_id} not found. Pass a valid hunt_id.",
+                }, indent=2)
+
+            # When in a hunt chat with no hunt_id resolved, refuse orphan create
+            if not numeric_hunt_id and get_active_hunt_id() is None:
+                # Still allow general-chat adds, but warn strongly
+                pass
+
             candidate = create_candidate(
                 db=db,
                 full_name=full_name,
-                current_title=current_title,
-                skills=skill_list,
-                location=location,
-                current_company=current_company,
-                experience_years=experience_years,
-                summary=summary,
-                status="Sourced"
+                current_title=(current_title or "").strip() or None,
+                skills=skill_list or None,
+                location=(location or "").strip() or None,
+                current_company=(current_company or "").strip() or None,
+                experience_years=years_val,
+                summary=(summary or "").strip() or None,
+                linkedin_url=(linkedin_url or "").strip() or None,
+                status="Sourced",
             )
-            if candidate:
-                # Auto-link to active hunt if only 1 active hunt exists
-                if not hunt_id:
-                    from app.copilot.tools import active_hunts, active_hunts_lock
-                    with active_hunts_lock:
-                        if len(active_hunts) == 1:
-                            hunt_id = list(active_hunts.keys())[0]
+            if not candidate:
+                return json.dumps({"status": "error", "message": "Failed to create/upsert candidate."})
 
-                if hunt_id:
-                    # Clean hunt_id if it comes as hunt_1abc
-                    try:
-                        numeric_hunt_id = int(hunt_id) if str(hunt_id).isdigit() else None
-                        if not numeric_hunt_id and "hunt_" in str(hunt_id):
-                            from app.copilot.tools import active_hunts, active_hunts_lock
-                            with active_hunts_lock:
-                                if hunt_id in active_hunts:
-                                    numeric_hunt_id = active_hunts[hunt_id].get("db_id")
-                        if numeric_hunt_id:
-                            add_candidate_to_hunt(
-                                db=db,
-                                hunt_id=numeric_hunt_id,
-                                full_name=full_name,
-                                candidate_id=candidate.id,
-                                current_title=current_title,
-                                current_company=current_company,
-                                location=location
-                            )
-                    except Exception as e:
-                        logger.error(f"Failed to link candidate to hunt {hunt_id}: {e}")
-
-                result = {
-                    "status": "success",
-                    "action": "add_candidate",
-                    "candidate_id": f"cand_{candidate.id}",
-                    "message": f"Successfully added {full_name} to the database."
-                }
-                return json.dumps(result, indent=2)
+            linked = False
+            link_error = None
+            if numeric_hunt_id:
+                try:
+                    add_candidate_to_hunt(
+                        db=db,
+                        hunt_id=numeric_hunt_id,
+                        full_name=candidate.full_name,
+                        candidate_id=candidate.id,
+                        current_title=candidate.current_title,
+                        current_company=candidate.current_company,
+                        location=candidate.location,
+                        linkedin_url=candidate.linkedin_url,
+                    )
+                    linked = True
+                except Exception as e:
+                    link_error = str(e)
+                    logger.error("Failed to link candidate to hunt %s: %s", numeric_hunt_id, e)
             else:
-                return json.dumps({"status": "error", "message": "Failed to create candidate in database."})
+                # Orphan guard: if session is a hunt session this should not happen
+                from app.copilot.session_ctx import get_active_session_id
+                sid = get_active_session_id() or ""
+                if sid.startswith("hunt_"):
+                    return json.dumps({
+                        "status": "error",
+                        "action": "add_candidate",
+                        "candidate_id": f"cand_{candidate.id}",
+                        "linked_to_hunt": False,
+                        "message": (
+                            f"Saved {full_name} to Candidates but REFUSED orphan pipeline link — "
+                            "hunt_id missing. Re-call with hunt_id from active hunt context."
+                        ),
+                    }, indent=2)
+
+            result = {
+                "status": "success" if linked or not numeric_hunt_id else "partial",
+                "action": "add_candidate",
+                "candidate_id": f"cand_{candidate.id}",
+                "hunt_id": numeric_hunt_id,
+                "linked_to_hunt": linked,
+                "experience_years": years_val,
+                "skills_saved": skill_list,
+                "linkedin_url": candidate.linkedin_url,
+                "message": (
+                    f"{'Upserted' if candidate else 'Added'} {full_name}"
+                    + (f" and linked to hunt {numeric_hunt_id}." if linked else " (not linked to a hunt).")
+                ),
+            }
+            if link_error:
+                result["link_error"] = link_error
+            if not linked and numeric_hunt_id:
+                result["status"] = "error"
+                result["message"] = f"Candidate saved but pipeline link failed: {link_error}"
+            return json.dumps(result, indent=2)
     except Exception as e:
         logger.error(f"Error adding candidate: {e}")
         return json.dumps({"status": "error", "message": str(e)})
@@ -354,11 +415,19 @@ def search_the_web(query: str) -> str:
         ddg = DuckDuckGoSearchResults()
         raw_result = ddg.run(query)
         
-        if not raw_result or not raw_result.strip():
-            return "SYSTEM_ERROR: Web search returned no results. Please inform the user or try a different query."
+        if raw_result is None:
+            return (
+                "SYSTEM_ERROR: Web search backend returned null (tool failure). "
+                "Tell the user search failed — do NOT assume zero candidates exist."
+            )
+        if not str(raw_result).strip():
+            return (
+                "EMPTY_RESULT: Web search ran successfully but returned no hits for this query. "
+                "Try a different query; do not invent candidates."
+            )
             
         # Truncate to prevent token burner
-        raw_result = raw_result[:4000]
+        raw_result = str(raw_result)[:4000]
         
         # Honey-Pot Pre-Filter (Prompt Injection Sanitization)
         from app.ai.engine import ai_engine
@@ -369,7 +438,10 @@ def search_the_web(query: str) -> str:
         
         return sanitized
     except Exception as e:
-        return f"SYSTEM_ERROR: Web search failed due to {str(e)}. Please inform the user or retry."
+        return (
+            f"SYSTEM_ERROR: Web search failed due to {str(e)}. "
+            "Inform the user the tool crashed — do NOT treat this as an empty talent market."
+        )
 
 @tool
 def verify_candidate_match(candidate_summary: str, required_skills: str) -> str:

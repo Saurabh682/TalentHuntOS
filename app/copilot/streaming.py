@@ -67,21 +67,39 @@ def _build_active_hunt_context(session_id: str) -> str:
             if not hunt:
                 return ""
             skills = ""
-            if hunt.search_config and hunt.search_config.required_skills:
-                skills = hunt.search_config.required_skills
+            industry = ""
+            exp = "any"
+            if hunt.search_config:
+                sc = hunt.search_config
+                if sc.required_skills:
+                    skills = sc.required_skills
+                if sc.industry:
+                    industry = sc.industry
+                emin, emax = sc.experience_years_min, sc.experience_years_max
+                if emin is not None and emax is not None:
+                    exp = f"{emin}-{emax} years"
+                elif emin is not None:
+                    exp = f"{emin}+ years"
+                elif emax is not None:
+                    exp = f"up to {emax} years"
             return (
                 f"CURRENT ACTIVE HUNT CONTEXT (Database ID: {hunt.id}):\n"
                 f"- Title: {hunt.title}\n"
                 f"- Target Role: {hunt.target_role or 'N/A'}\n"
                 f"- Location: {hunt.location or 'N/A'}\n"
-                f"- Required Skills: {skills}\n\n"
-                "CRITICAL INSTRUCTION: The user is currently viewing this specific Talent Hunt. "
-                "When they ask to find/look for/source N talents or search LinkedIn, call "
-                f"`source_talent_for_hunt` with hunt_id='{hunt.id}' and target_count=N. "
-                "Do NOT ask again for role/skills/location. "
-                f"For remove/clear requests, call remove_candidates_from_hunt with hunt_id='{hunt.id}' "
-                "(use confirm=true). Then call source_talent_for_hunt. "
-                "Never present candidates from unrelated professions (e.g. animators on a sales hunt)."
+                f"- Experience band (HARD): {exp}\n"
+                f"- Industry: {industry or 'N/A'}\n"
+                f"- Salary: {hunt.salary_range or 'N/A'}\n"
+                f"- Required Skills: {skills or 'N/A'}\n\n"
+                "CRITICAL CONSTRAINTS (do not drift across this session):\n"
+                f"1) Always pass hunt_id='{hunt.id}' when adding/sourcing/removing candidates.\n"
+                f"2) Never invent years of experience or skills not evidenced on a profile.\n"
+                f"3) Stay inside experience band '{exp}' and role '{hunt.target_role or hunt.title}'.\n"
+                "4) When they ask to find/look for/source N talents or search LinkedIn, call "
+                f"`source_talent_for_hunt` with hunt_id='{hunt.id}' and target_count=N.\n"
+                f"5) For remove/clear: remove_candidates_from_hunt(hunt_id='{hunt.id}', confirm=true) then re-source.\n"
+                "6) Never present candidates from unrelated professions (e.g. animators on a sales hunt).\n"
+                "7) Prefer read_profile_page before trusting a LinkedIn URL."
             )
     except Exception as e:
         logger.warning("Failed to fetch active hunt DB context: %s", e)
@@ -95,8 +113,17 @@ def _run_agent_worker(
     provider: Optional[str],
     model: Optional[str],
     out_q: queue.Queue,
+    session_id: str = "default",
 ) -> None:
     """Own event loop + thread so sync tools never block NiceGUI's WebSocket."""
+    from app.copilot.session_ctx import (
+        resolve_hunt_id_from_session,
+        set_active_hunt_id,
+        set_active_session_id,
+    )
+
+    set_active_session_id(session_id)
+    set_active_hunt_id(resolve_hunt_id_from_session(session_id))
 
     async def _consume() -> None:
         accumulated = ""
@@ -161,6 +188,9 @@ def _run_agent_worker(
         logger.exception("Copilot worker loop crashed: %s", exc)
         out_q.put(f"Copilot worker crashed: {exc}")
         out_q.put(None)
+    finally:
+        set_active_session_id(None)
+        set_active_hunt_id(None)
 
 
 async def stream_copilot_response(
@@ -204,6 +234,7 @@ async def stream_copilot_response(
                 "provider": provider,
                 "model": model,
                 "out_q": out_q,
+                "session_id": session_id,
             },
             daemon=True,
             name="copilot-agent",

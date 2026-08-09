@@ -44,7 +44,8 @@ def ai_verify_profile(
         "4. PASS only if the person's CURRENT/RECENT work matches the role family "
         "(e.g. Sales/BD/Account for a BD Executive hunt — reject Animators, Engineers unrelated to sales, "
         "and people clearly outside the experience band).\n"
-        "5. Estimate total years of professional experience from dates/text when possible.\n"
+        "5. Estimate total years of professional experience ONLY when dates/text clearly support it. "
+        "If years are not evidenced, set years to null — NEVER invent a number.\n"
         "6. Reply with ONLY compact JSON: "
         '{"pass": true|false, "years": number|null, "title": "best job title", "reason": "short"}\n'
     )

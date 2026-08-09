@@ -24,9 +24,13 @@ PLATFORM_COLORS = {
 }
 
 
-def _ddg_search(query: str, max_results: int = 8) -> List[Dict[str, str]]:
-    """Run a free DuckDuckGo search; return list of {title, link, snippet}."""
+def _ddg_search(query: str, max_results: int = 8) -> Tuple[List[Dict[str, str]], Optional[str]]:
+    """Run a free DuckDuckGo search; return (hits, error).
+
+    error is set when every backend failed — empty hits with error=None means a real empty result set.
+    """
     results: List[Dict[str, str]] = []
+    errors: List[str] = []
 
     def _normalize(items) -> List[Dict[str, str]]:
         out: List[Dict[str, str]] = []
@@ -46,8 +50,9 @@ def _ddg_search(query: str, max_results: int = 8) -> List[Dict[str, str]]:
         with DDGS() as client:
             results = _normalize(client.text(query, max_results=max_results))
         if results:
-            return results
+            return results, None
     except Exception as exc:
+        errors.append(f"ddgs: {exc}")
         logger.debug("ddgs search failed: %s", exc)
 
     # 2) Legacy duckduckgo_search
@@ -56,8 +61,9 @@ def _ddg_search(query: str, max_results: int = 8) -> List[Dict[str, str]]:
         with LegacyDDGS() as client:
             results = _normalize(client.text(query, max_results=max_results))
         if results:
-            return results
+            return results, None
     except Exception as exc:
+        errors.append(f"duckduckgo_search: {exc}")
         logger.debug("duckduckgo_search failed: %s", exc)
 
     # 3) LangChain wrapper
@@ -68,7 +74,7 @@ def _ddg_search(query: str, max_results: int = 8) -> List[Dict[str, str]]:
         if isinstance(raw, list):
             results = _normalize(raw)
             if results:
-                return results
+                return results, None
 
         # Parse string blobs: "snippet: ... title: ... link: ..."
         current: Dict[str, str] = {}
@@ -87,11 +93,16 @@ def _ddg_search(query: str, max_results: int = 8) -> List[Dict[str, str]]:
         if current.get("title") or current.get("link"):
             results.append(current)
         if results:
-            return results
+            return results, None
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return [], None  # genuine empty
     except Exception as exc:
+        errors.append(f"langchain_ddg: {exc}")
         logger.warning("DuckDuckGo search failed for %r: %s", query, exc)
 
-    return results
+    if errors and not results:
+        return [], "; ".join(errors[:3])
+    return results, None
 
 
 def _detect_platform(url: str, title: str = "") -> str:
@@ -302,6 +313,8 @@ def source_candidates_for_hunt(
     skipped_exp = 0
     skipped_ai = 0
     skipped_url = 0
+    search_failures = 0
+    search_ok = 0
     errors: List[str] = []
     goal = target_added or 25
 
@@ -316,7 +329,12 @@ def source_candidates_for_hunt(
             break
         if added >= goal:
             break
-        hits = _ddg_search(query, max_results=max_per_query)
+        hits, search_err = _ddg_search(query, max_results=max_per_query)
+        if search_err:
+            search_failures += 1
+            errors.append(f"search_failed: {search_err}")
+            continue
+        search_ok += 1
         for hit in hits:
             if sourcing_jobs.should_cancel(job_id):
                 break
@@ -495,14 +513,20 @@ def source_candidates_for_hunt(
                                     message=f"Added {added}: {name}",
                                 )
                     else:
+                        # Only store skills evidenced on the page snippet/text — never invent hunt skills as theirs
+                        evidenced_skills: List[str] = []
+                        blob = f"{page_text} {page_summary} {job_title}".lower()
+                        for sk in skill_bits[:12]:
+                            if sk and sk.lower() in blob:
+                                evidenced_skills.append(sk)
                         candidate = create_candidate(
                             db,
                             full_name=name.strip(),
                             current_title=job_title or role_label,
                             current_company=company or None,
                             location=loc,
-                            experience_years=est_years,
-                            skills=skill_bits[:8] if skill_bits else [role_label],
+                            experience_years=est_years if est_years and est_years > 0 else None,
+                            skills=evidenced_skills or None,
                             summary=(page_summary[:400] if page_summary else f"Sourced from {platform} for {title_label}"),
                             linkedin_url=linkedin_url,
                             status="Sourced",
@@ -559,28 +583,49 @@ def source_candidates_for_hunt(
                 errors.append(str(exc))
 
     cancelled = sourcing_jobs.should_cancel(job_id)
+    if cancelled:
+        status = "cancelled"
+    elif search_ok == 0 and search_failures > 0:
+        status = "search_failed"
+    elif added == 0 and scanned == 0 and search_ok > 0:
+        status = "empty"
+    else:
+        status = "success"
+
     result = {
-        "status": "cancelled" if cancelled else "success",
+        "status": status,
         "hunt_id": hunt_id,
         "scanned": scanned,
         "added": added,
         "skipped_exp": skipped_exp,
         "skipped_ai": skipped_ai,
         "skipped_url": skipped_url,
+        "search_ok": search_ok,
+        "search_failures": search_failures,
         "exp_min": experience_years_min,
         "exp_max": experience_years_max,
         "queries": len(queries),
         "errors": errors[:5],
+        "message": (
+            f"Web search backends failed ({search_failures} queries). Not the same as zero candidates."
+            if status == "search_failed"
+            else (
+                f"Search ran but found no usable profile hits (scanned={scanned})."
+                if status == "empty"
+                else f"Added {added}, scanned {scanned}, skipped exp {skipped_exp}, AI rejects {skipped_ai}."
+            )
+        ),
     }
     if job_id:
         sourcing_jobs.finish_job(
             job_id,
-            status="cancelled" if cancelled else "done",
+            status="cancelled" if cancelled else ("error" if status == "search_failed" else "done"),
             message=(
                 f"Cancelled after adding {added}."
                 if cancelled
-                else f"Done — added {added}, scanned {scanned}, skipped exp {skipped_exp}, AI rejects {skipped_ai}."
+                else result["message"]
             ),
+            error="; ".join(errors[:2]) if status == "search_failed" else None,
         )
     return result
 
