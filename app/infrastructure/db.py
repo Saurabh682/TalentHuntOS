@@ -1,6 +1,7 @@
 """Database infrastructure for TalentHunt OS using SQLAlchemy 2.0."""
 
 from datetime import datetime, timezone
+import threading
 from typing import Generator
 from sqlalchemy import (
     BigInteger,
@@ -8,9 +9,11 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    text,
     create_engine,
     event,
 )
@@ -37,12 +40,21 @@ class Base(DeclarativeBase):
 class User(Base):
     """User account model."""
     __tablename__ = "users"
+    __table_args__ = (
+        Index(
+            "uq_single_admin_role",
+            "role",
+            unique=True,
+            sqlite_where=text("role = 'admin'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     email: Mapped[str | None] = mapped_column(String(120), unique=True, index=True, nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     role: Mapped[str] = mapped_column(String(30), default="user", nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
@@ -139,6 +151,7 @@ SessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 ScopedSession = scoped_session(SessionFactory)
 
 _db_initialized = False
+_db_init_lock = threading.Lock()
 
 
 def init_db() -> None:
@@ -150,54 +163,20 @@ def init_db() -> None:
     if _db_initialized:
         return
 
-    import app.hunts.models  # Register models with Base.metadata
-    import app.candidates.models  # Register candidate models with Base.metadata
-    import app.communications.models  # Register communications models with Base.metadata
-    Base.metadata.create_all(bind=engine)
+    with _db_init_lock:
+        if _db_initialized:
+            return
 
-    # Auto-migration for SQLite missing columns
-    try:
-        with engine.connect() as conn:
-            # 1. hunt_candidates candidate_id + source context
-            res = conn.exec_driver_sql("PRAGMA table_info(hunt_candidates)").fetchall()
-            cols = [r[1] for r in res]
-            if res and "candidate_id" not in cols:
-                conn.exec_driver_sql("ALTER TABLE hunt_candidates ADD COLUMN candidate_id INTEGER REFERENCES candidates(id)")
-                conn.commit()
-            if res:
-                hc_expected = {
-                    "source_platform": "VARCHAR(50)",
-                    "source_query": "TEXT",
-                }
-                for col_name, col_type in hc_expected.items():
-                    if col_name not in cols:
-                        conn.exec_driver_sql(f"ALTER TABLE hunt_candidates ADD COLUMN {col_name} {col_type}")
-                conn.commit()
+        import app.hunts.models  # Register models with Base.metadata
+        import app.candidates.models  # Register candidate models with Base.metadata
+        import app.communications.models  # Register communications models with Base.metadata
+        import app.actions.models  # Register durable action history with Base.metadata
+        import app.jobs.models  # Register durable background jobs with Base.metadata
+        from app.infrastructure.migrations import run_schema_migrations
 
-            # 2. hunt_search_configs missing columns
-            sc_res = conn.exec_driver_sql("PRAGMA table_info(hunt_search_configs)").fetchall()
-            sc_cols = [r[1] for r in sc_res]
-            if sc_res:
-                expected_cols = {
-                    "keywords": "TEXT",
-                    "required_skills": "TEXT",
-                    "preferred_skills": "TEXT",
-                    "experience_years_min": "INTEGER",
-                    "experience_years_max": "INTEGER",
-                    "locations": "VARCHAR(255)",
-                    "industry": "VARCHAR(100)",
-                    "remote_policy": "VARCHAR(50)",
-                    "target_platforms": "TEXT",
-                }
-                for col_name, col_type in expected_cols.items():
-                    if col_name not in sc_cols:
-                        conn.exec_driver_sql(f"ALTER TABLE hunt_search_configs ADD COLUMN {col_name} {col_type}")
-                conn.commit()
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning(f"Schema migration error ignored: {e}")
+        run_schema_migrations(engine, settings.db_path, Base.metadata)
 
-    _db_initialized = True
+        _db_initialized = True
 
 
 def get_db() -> Generator[Session, None, None]:

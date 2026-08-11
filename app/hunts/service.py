@@ -38,6 +38,7 @@ def create_hunt(
     salary_range: Optional[str] = None,
     search_config: Optional[Dict[str, Any]] = None,
     custom_stages: Optional[List[str]] = None,
+    commit: bool = True,
 ) -> Optional[TalentHunt]:
     """Create a new Talent Hunt campaign with search config and pipeline stages.
     
@@ -127,7 +128,10 @@ def create_hunt(
         )
         db.add(activity)
 
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(hunt)
         return hunt
     except SQLAlchemyError as e:
@@ -151,7 +155,11 @@ def get_hunt(db: Session, hunt_id: int) -> Optional[TalentHunt]:
         Optional[TalentHunt]: The retrieved TalentHunt object, or None if not found or an error occurs.
     """
     try:
-        stmt = select(TalentHunt).options(joinedload(TalentHunt.candidates), joinedload(TalentHunt.stages)).where(TalentHunt.id == hunt_id)
+        stmt = select(TalentHunt).options(
+            joinedload(TalentHunt.candidates),
+            joinedload(TalentHunt.stages),
+            joinedload(TalentHunt.search_config),
+        ).where(TalentHunt.id == hunt_id)
         return db.scalars(stmt).unique().first()
     except SQLAlchemyError as e:
         logger.error(f"Database error while retrieving hunt {hunt_id}: {e}")
@@ -179,6 +187,8 @@ def list_hunts(
         stmt = select(TalentHunt)
         if status and status != "All":
             stmt = stmt.where(TalentHunt.status == status)
+        else:
+            stmt = stmt.where(TalentHunt.status != "Archived")
         stmt = stmt.order_by(TalentHunt.created_at.desc()).offset(skip).limit(limit)
         return list(db.scalars(stmt).all())
     except SQLAlchemyError as e:
@@ -222,8 +232,14 @@ def update_hunt(db: Session, hunt_id: int, **kwargs: Any) -> Optional[TalentHunt
         return None
 
 
-def delete_hunt(db: Session, hunt_id: int) -> bool:
-    """Delete a Talent Hunt campaign.
+def delete_hunt(
+    db: Session,
+    hunt_id: int,
+    *,
+    actor_type: str = "ui",
+    session_id: str | None = None,
+) -> bool:
+    """Archive a Talent Hunt campaign with a seven-day undo record.
     
     Args:
         db (Session): Database session object.
@@ -238,8 +254,22 @@ def delete_hunt(db: Session, hunt_id: int) -> bool:
             logger.warning(f"Hunt {hunt_id} not found for deletion.")
             return False
 
-        db.delete(hunt)
-        db.commit()
+        if hunt.status == "Archived":
+            return False
+
+        from app.actions.history import record_action
+
+        previous_status = hunt.status
+        hunt.status = "Archived"
+        record_action(
+            db,
+            action_type="archive_hunt",
+            summary=f"Archived Talent Hunt '{hunt.title}'",
+            actor_type=actor_type,
+            session_id=session_id,
+            payload={"hunt_id": hunt.id, "title": hunt.title},
+            undo_payload={"hunt_id": hunt.id, "previous_status": previous_status},
+        )
         return True
     except SQLAlchemyError as e:
         db.rollback()
@@ -251,29 +281,42 @@ def delete_hunt(db: Session, hunt_id: int) -> bool:
         return False
 
 
-def get_hunt_metrics(db: Session, hunt_id: int) -> Dict[str, Any]:
+def get_hunt_metrics(db: Session, hunt_id: int, *, reconcile: bool = True) -> Dict[str, Any]:
     """Calculate and return key performance metrics for a specific hunt.
-    
+
     Args:
         db (Session): Database session object.
         hunt_id (int): ID of the TalentHunt.
+        reconcile: When True, re-link tagged Candidates onto the pipeline so the
+            card count matches the Candidates pool for this hunt.
 
     Returns:
         Dict[str, Any]: A dictionary containing key metrics.
     """
     try:
+        if reconcile:
+            try:
+                from app.hunts.pipeline import reconcile_hunt_from_tags
+                reconcile_hunt_from_tags(db, hunt_id)
+                db.expire_all()
+            except Exception as sync_exc:
+                logger.warning("Hunt reconcile failed for %s: %s", hunt_id, sync_exc)
+
         hunt = get_hunt(db, hunt_id)
         if not hunt:
             logger.warning(f"Hunt {hunt_id} not found for metrics calculation.")
             return {}
 
-        total_candidates = len(hunt.candidates)
+        from app.hunts.pipeline import list_active_hunt_candidates
+
+        active_candidates = list_active_hunt_candidates(db, hunt_id)
+        total_candidates = len(active_candidates)
         
         stage_breakdown: Dict[str, int] = {}
         for stage in hunt.stages:
-            stage_breakdown[stage.name] = len([c for c in hunt.candidates if c.stage_id == stage.id])
+            stage_breakdown[stage.name] = len([c for c in active_candidates if c.stage_id == stage.id])
 
-        scores = [c.match_score for c in hunt.candidates if c.match_score is not None]
+        scores = [c.match_score for c in active_candidates if c.match_score is not None]
         if scores:
             raw_avg = sum(scores) / len(scores)
             avg_score = round(raw_avg * 100 if raw_avg <= 1.0 else raw_avg, 1)

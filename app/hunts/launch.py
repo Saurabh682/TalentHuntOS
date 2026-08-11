@@ -10,7 +10,6 @@ from nicegui import ui
 
 from app.copilot.conversation import conversation_manager
 from app.infrastructure.db import SessionFactory
-from app.hunts.service import create_hunt
 
 logger = logging.getLogger("talenthunt.hunts.launch")
 
@@ -78,6 +77,8 @@ def launch_hunt_and_start_sourcing(
     required_skills: Optional[str] = None,
     experience: Optional[str] = None,
     industry: Optional[str] = None,
+    actor_type: str = "ui",
+    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create an Active hunt, bind Copilot session, and queue sourcing prompt."""
     loc = (location or "").strip() or DEFAULT_LOCATION
@@ -86,38 +87,25 @@ def launch_hunt_and_start_sourcing(
     exp = (experience or "").strip()
     industry_val = (industry or "").strip()
 
-    cfg: Dict[str, Any] = {
-        "target_platforms": DEFAULT_PLATFORMS,
-        "locations": loc,
-    }
-    if skills:
-        cfg["required_skills"] = skills
-    if industry_val:
-        cfg["industry"] = industry_val
-    if exp:
-        from app.hunts.experience import parse_experience_range
-        cfg["min_experience"] = exp
-        cfg["keywords"] = f"Exp: {exp}"
-        emin, emax = parse_experience_range(exp)
-        if emin is not None:
-            cfg["experience_years_min"] = emin
-        if emax is not None:
-            cfg["experience_years_max"] = emax
+    from app.actions.api import dispatch_action
 
-    with SessionFactory() as db:
-        hunt = create_hunt(
-            db,
-            title=title.strip(),
-            target_role=role,
-            location=loc,
-            salary_range=(salary_range or "").strip() or None,
-            description=(description or "").strip() or None,
-            search_config=cfg,
-        )
-        if not hunt:
-            raise RuntimeError("Failed to create Talent Hunt")
-        hunt_id = hunt.id
-        hunt_title = hunt.title
+    created = dispatch_action(
+        "hunts.create",
+        {
+            "title": title.strip(), "target_role": role, "location": loc,
+            "salary_range": (salary_range or "").strip() or None,
+            "description": (description or "").strip() or None,
+            "required_skills": skills or None, "experience": exp or None,
+            "industry": industry_val or None, "target_platforms": DEFAULT_PLATFORMS,
+            "status": "Active",
+        },
+        actor_type=actor_type,
+        session_id=session_id or "hunt_launch",
+    )
+    if not created.success:
+        raise RuntimeError(created.error or "Failed to create Talent Hunt")
+    hunt_id = int(created.data["hunt_id"])
+    hunt_title = str(created.data["hunt_title"])
 
     session_id = f"hunt_{hunt_id}"
     prompt = build_sourcing_prompt(
@@ -155,10 +143,10 @@ def launch_hunt_and_start_sourcing(
     except Exception as exc:
         logger.warning("Could not write user storage for hunt launch: %s", exc)
 
-    # Free sourcing in background: internal AutoPilot + LinkedIn/Naukri via DuckDuckGo
+    # Check the local pool once. The queued Copilot prompt owns the single tracked
+    # web search; starting another hidden crawl here doubles browser work.
     def _source_after_launch():
         auto_added = 0
-        web_added = 0
         try:
             from app.intelligence.auto_pilot import run_autopilot_hunt_job
             auto_result = run_autopilot_hunt_job(hunt_id) or {}
@@ -167,34 +155,11 @@ def launch_hunt_and_start_sourcing(
             logger.error("AutoPilot after launch failed: %s", exc)
 
         try:
-            from app.hunts.web_sourcing import source_candidates_for_hunt
-            web_result = source_candidates_for_hunt(
-                hunt_id,
-                role=role,
-                skills=skills,
-                location=loc,
-                hunt_title=hunt_title,
-            ) or {}
-            web_added = int(web_result.get("added") or 0)
-            logger.info(
-                "Web sourcing hunt %s: scanned=%s added=%s",
-                hunt_id,
-                web_result.get("scanned"),
-                web_added,
-            )
-        except Exception as exc:
-            logger.error("Web sourcing after launch failed: %s", exc)
-
-        total = auto_added + web_added
-        try:
             conversation_manager.add_assistant_message(
                 (
-                    f"✅ Sourcing pass complete for **{hunt_title}**.\n\n"
-                    f"- Internal pool matches: **{auto_added}**\n"
-                    f"- LinkedIn/Naukri web leads: **{web_added}**\n"
-                    f"- Total added to pipeline: **{total}**\n\n"
-                    f"Candidates are tagged with `Hunt: {hunt_title}`. "
-                    f"Open the pipeline or Candidates page to review."
+                    f"Local pool check complete for **{hunt_title}**: **{auto_added}** match(es) added. "
+                    "The tracked LinkedIn/Naukri search is handled by Copilot so it can be "
+                    "monitored and cancelled without launching a duplicate crawl."
                 ),
                 session_id=session_id,
             )
@@ -213,4 +178,5 @@ def launch_hunt_and_start_sourcing(
         "title": hunt_title,
         "location": loc,
         "prompt": prompt,
+        "action_id": created.data.get("action_id"),
     }

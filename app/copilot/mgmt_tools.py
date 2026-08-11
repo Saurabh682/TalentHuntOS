@@ -107,9 +107,6 @@ def update_talent_hunt(
         description: Role summary / responsibilities.
     """
     from app.infrastructure.db import SessionFactory
-    from app.hunts.experience import parse_experience_range
-    from app.hunts.models import HuntSearchConfig
-
     try:
         with SessionFactory() as db:
             resolved = _resolve_hunt(db, hunt_id, hunt_title)
@@ -121,60 +118,30 @@ def update_talent_hunt(
                     "message": "Hunt not found. Pass hunt_id or a unique hunt_title.",
                 }, indent=2)
 
-            h = resolved
-            changed: List[str] = []
+            resolved_id = resolved.id
 
-            if title.strip():
-                h.title = title.strip()
-                changed.append("title")
-            if target_role.strip():
-                h.target_role = target_role.strip()
-                changed.append("target_role")
-            if location.strip():
-                h.location = location.strip()
-                changed.append("location")
-            if salary_range.strip():
-                h.salary_range = salary_range.strip()
-                changed.append("salary_range")
-            if description.strip():
-                h.description = description.strip()
-                changed.append("description")
-
-            if not h.search_config:
-                h.search_config = HuntSearchConfig(hunt_id=h.id)
-                db.add(h.search_config)
-
-            if required_skills.strip():
-                h.search_config.required_skills = required_skills.strip()
-                changed.append("required_skills")
-            if industry.strip():
-                h.search_config.industry = industry.strip()
-                changed.append("industry")
-            if location.strip():
-                h.search_config.locations = location.strip()
-
-            if experience.strip():
-                emin, emax = parse_experience_range(experience)
-                h.search_config.experience_years_min = emin
-                h.search_config.experience_years_max = emax
-                changed.append("experience")
-
-            if not changed:
-                return json.dumps({
-                    "status": "noop",
-                    "hunt_id": h.id,
-                    "message": "No fields to update. Pass title, role, location, experience, salary_range, skills, industry, or description.",
-                }, indent=2)
-
-            db.commit()
+        payload = {"hunt_id": resolved_id}
+        supplied = {
+            "title": title, "target_role": target_role, "location": location,
+            "experience": experience, "salary_range": salary_range,
+            "required_skills": required_skills, "industry": industry,
+            "description": description,
+        }
+        payload.update({key: value.strip() for key, value in supplied.items() if value.strip()})
+        if len(payload) == 1:
             return json.dumps({
-                "status": "success",
-                "action": "update_talent_hunt",
-                "hunt_id": h.id,
-                "title": h.title,
-                "changed": changed,
-                "message": f"Updated hunt '{h.title}' ({', '.join(changed)}).",
+                "status": "noop", "hunt_id": resolved_id,
+                "message": "No fields to update. Pass title, role, location, experience, salary range, skills, industry, or description.",
             }, indent=2)
+        from app.actions.api import dispatch_action
+        from app.copilot.session_ctx import get_active_session_id
+        result = dispatch_action(
+            "hunts.update", payload, actor_type="agent",
+            session_id=get_active_session_id() or f"hunt_{resolved_id}",
+        )
+        if not result.success:
+            return json.dumps({"status": "error", "message": result.error}, indent=2)
+        return json.dumps(result.data, indent=2)
     except Exception as e:
         logger.exception("update_talent_hunt failed")
         return json.dumps({"status": "error", "error": str(e)}, indent=2)
@@ -191,9 +158,7 @@ def set_hunt_status(hunt_id: str = "", hunt_title: str = "", status: str = "Paus
         status: New status (default Paused).
     """
     from app.infrastructure.db import SessionFactory
-    from app.hunts.service import update_hunt
-
-    allowed = {"Active", "Paused", "Draft", "Completed", "Archived"}
+    allowed = {"Active", "Paused", "Draft", "Completed"}
     st = (status or "Paused").strip().title()
     if st == "Pause":
         st = "Paused"
@@ -212,35 +177,34 @@ def set_hunt_status(hunt_id: str = "", hunt_title: str = "", status: str = "Paus
                 return json.dumps({"status": "ambiguous", "matches": resolved["ambiguous"]}, indent=2)
             if not resolved:
                 return json.dumps({"status": "error", "message": "Hunt not found."}, indent=2)
-            hunt = update_hunt(db, resolved.id, status=st)
-            if not hunt:
-                return json.dumps({"status": "error", "message": "Update failed."}, indent=2)
-            return json.dumps({
-                "status": "success",
-                "action": "set_hunt_status",
-                "hunt_id": hunt.id,
-                "title": hunt.title,
-                "new_status": hunt.status,
-                "message": f"Hunt '{hunt.title}' is now {hunt.status}.",
-            }, indent=2)
+            resolved_id = resolved.id
+
+        from app.actions.api import dispatch_action
+        from app.copilot.session_ctx import get_active_session_id
+        result = dispatch_action(
+            "hunts.status.set", {"hunt_id": resolved_id, "status": st},
+            actor_type="agent", session_id=get_active_session_id() or f"hunt_{resolved_id}",
+        )
+        if not result.success:
+            return json.dumps({"status": "error", "message": result.error}, indent=2)
+        return json.dumps(result.data, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "error": str(e)}, indent=2)
 
 
 @tool
 def delete_talent_hunt(hunt_id: str = "", hunt_title: str = "", confirm: bool = False) -> str:
-    """Permanently delete a Talent Hunt campaign and its pipeline enrollments.
-    Always preview first (confirm=false), then re-call with confirm=true.
+    """Request a trusted UI approval card to archive one Talent Hunt.
+    The model cannot approve or execute this R3 action itself.
 
     Args:
         hunt_id: Numeric hunt id.
         hunt_title: Title substring if id unknown.
-        confirm: Must be True to actually delete.
+        confirm: Deprecated and ignored; only the authenticated UI approval button executes.
     """
     from app.infrastructure.db import SessionFactory
-    from app.hunts.service import delete_hunt
-    from app.hunts.models import HuntCandidate
-    from sqlalchemy import select, func
+    from app.actions.api import dispatch_preview
+    from app.copilot.session_ctx import get_active_session_id
 
     try:
         with SessionFactory() as db:
@@ -250,37 +214,21 @@ def delete_talent_hunt(hunt_id: str = "", hunt_title: str = "", confirm: bool = 
             if not resolved:
                 return json.dumps({"status": "error", "message": "Hunt not found."}, indent=2)
 
-            count = int(
-                db.scalar(
-                    select(func.count()).select_from(HuntCandidate).where(
-                        HuntCandidate.hunt_id == resolved.id
-                    )
-                )
-                or 0
+            result = dispatch_preview(
+                "hunts.archive",
+                {"hunt_id": resolved.id},
+                actor_type="agent",
+                session_id=get_active_session_id() or f"hunt_{resolved.id}",
             )
-            if not confirm:
-                return json.dumps({
-                    "status": "preview",
-                    "hunt_id": resolved.id,
-                    "title": resolved.title,
-                    "pipeline_candidates": count,
-                    "message": (
-                        f"Preview only. Re-call with confirm=true to permanently delete "
-                        f"'{resolved.title}' and {count} pipeline enrollment(s)."
-                    ),
-                }, indent=2)
-
-            title = resolved.title
-            hid = resolved.id
-            ok = delete_hunt(db, hid)
-            if not ok:
-                return json.dumps({"status": "error", "message": "Delete failed."}, indent=2)
+            if not result.success:
+                return json.dumps({"status": "error", "message": result.error}, indent=2)
+            payload = result.data or {}
             return json.dumps({
-                "status": "success",
-                "action": "delete_talent_hunt",
-                "hunt_id": hid,
-                "title": title,
-                "message": f"Deleted hunt '{title}'.",
+                **payload,
+                "message": (
+                    "Archive preview created. The authenticated user must use the "
+                    "Approve button in Copilot; model confirmation cannot execute it."
+                ),
             }, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "error": str(e)}, indent=2)
@@ -295,36 +243,17 @@ def list_talent_hunts(status: str = "All", limit: int = 20) -> str:
         limit: Max hunts to return (default 20).
     """
     from app.infrastructure.db import SessionFactory
-    from app.hunts.service import list_hunts, get_hunt_metrics
-
     try:
-        with SessionFactory() as db:
-            st = None if (not status or status.lower() == "all") else status.strip().title()
-            hunts = list_hunts(db, status=st, limit=max(1, min(int(limit or 20), 50)))
-            rows = []
-            for h in hunts:
-                metrics = get_hunt_metrics(db, h.id) or {}
-                sc = h.search_config
-                exp = None
-                if sc and (sc.experience_years_min is not None or sc.experience_years_max is not None):
-                    emin, emax = sc.experience_years_min, sc.experience_years_max
-                    if emin is not None and emax is not None:
-                        exp = f"{emin}-{emax}" if emin != emax else str(emin)
-                    elif emin is not None:
-                        exp = f"{emin}+"
-                rows.append({
-                    "id": h.id,
-                    "title": h.title,
-                    "role": h.target_role,
-                    "location": h.location,
-                    "status": h.status,
-                    "salary_range": h.salary_range,
-                    "industry": sc.industry if sc else None,
-                    "experience": exp,
-                    "skills": sc.required_skills if sc else None,
-                    "candidates": metrics.get("total_candidates", 0),
-                })
-            return json.dumps({"status": "success", "count": len(rows), "hunts": rows}, indent=2)
+        from app.actions.api import dispatch_action
+        from app.copilot.session_ctx import get_active_session_id
+        result = dispatch_action(
+            "hunts.list",
+            {"status": status, "limit": max(1, min(int(limit or 20), 50))},
+            actor_type="agent", session_id=get_active_session_id() or "default",
+        )
+        if not result.success:
+            return json.dumps({"status": "error", "message": result.error}, indent=2)
+        return json.dumps(result.data, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "error": str(e)}, indent=2)
 
@@ -347,8 +276,6 @@ def keep_pipeline_candidate(
         note: Optional Keep reason for the playbook.
     """
     from app.infrastructure.db import SessionFactory
-    from app.hunts.playbook import keep_hunt_candidate
-
     try:
         with SessionFactory() as db:
             resolved = _resolve_hunt(db, hunt_id, hunt_title)
@@ -368,12 +295,30 @@ def keep_pipeline_candidate(
                     "message": "Candidate not found on this hunt. Pass hunt_candidate_id or a unique name_contains.",
                 }, indent=2)
 
-            result = keep_hunt_candidate(
-                db, hc.id, note=(note or "").strip() or None, author_name="Copilot"
-            )
-            result["hunt_id"] = resolved.id
-            result["candidate_name"] = hc.full_name
-            return json.dumps(result, indent=2)
+            candidate_name = hc.full_name
+            candidate_row_id = hc.id
+            resolved_id = resolved.id
+
+        from app.actions.api import dispatch_action
+        from app.copilot.session_ctx import get_active_session_id
+
+        action_result = dispatch_action(
+            "pipeline.triage",
+            {
+                "hunt_candidate_id": candidate_row_id,
+                "decision": "keep",
+                "note": (note or "").strip() or None,
+                "author": "Copilot",
+            },
+            actor_type="agent",
+            session_id=get_active_session_id() or "default",
+        )
+        if not action_result.success:
+            return json.dumps({"status": "error", "message": action_result.error}, indent=2)
+        result = action_result.data or {}
+        result["hunt_id"] = resolved_id
+        result["candidate_name"] = candidate_name
+        return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "error": str(e)}, indent=2)
 
@@ -397,8 +342,6 @@ def pass_pipeline_candidate(
         note: Optional Pass reason for the playbook.
     """
     from app.infrastructure.db import SessionFactory
-    from app.hunts.playbook import pass_hunt_candidate
-
     try:
         with SessionFactory() as db:
             resolved = _resolve_hunt(db, hunt_id, hunt_title)
@@ -419,12 +362,29 @@ def pass_pipeline_candidate(
                 }, indent=2)
 
             name = hc.full_name
-            result = pass_hunt_candidate(
-                db, hc.id, note=(note or "").strip() or None, author_name="Copilot"
-            )
-            result["hunt_id"] = resolved.id
-            result["candidate_name"] = name
-            return json.dumps(result, indent=2)
+            candidate_row_id = hc.id
+            resolved_id = resolved.id
+
+        from app.actions.api import dispatch_action
+        from app.copilot.session_ctx import get_active_session_id
+
+        action_result = dispatch_action(
+            "pipeline.triage",
+            {
+                "hunt_candidate_id": candidate_row_id,
+                "decision": "pass",
+                "note": (note or "").strip() or None,
+                "author": "Copilot",
+            },
+            actor_type="agent",
+            session_id=get_active_session_id() or "default",
+        )
+        if not action_result.success:
+            return json.dumps({"status": "error", "message": action_result.error}, indent=2)
+        result = action_result.data or {}
+        result["hunt_id"] = resolved_id
+        result["candidate_name"] = name
+        return json.dumps(result, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "error": str(e)}, indent=2)
 
@@ -448,7 +408,6 @@ def move_pipeline_candidate(
     """
     from app.infrastructure.db import SessionFactory
     from app.hunts.models import HuntStage
-    from app.hunts.pipeline import move_candidate_stage
     from sqlalchemy import select
 
     stage_needle = (stage_name or "").strip()
@@ -487,18 +446,19 @@ def move_pipeline_candidate(
                     "available_stages": [s.name for s in stages],
                 }, indent=2)
 
-            moved = move_candidate_stage(db, hc.id, stage.id)
-            if not moved:
-                return json.dumps({"status": "error", "message": "Move failed."}, indent=2)
-            return json.dumps({
-                "status": "success",
-                "action": "move_pipeline_candidate",
-                "hunt_id": resolved.id,
-                "hunt_candidate_id": hc.id,
-                "candidate_name": moved.full_name,
-                "stage": stage.name,
-                "message": f"Moved '{moved.full_name}' to {stage.name}.",
-            }, indent=2)
+            from app.copilot.session_ctx import get_active_session_id
+
+            from app.actions.api import dispatch_action
+
+            action_result = dispatch_action(
+                "pipeline.move",
+                {"hunt_candidate_id": hc.id, "stage_id": stage.id},
+                actor_type="agent",
+                session_id=get_active_session_id() or "default",
+            )
+            if not action_result.success:
+                return json.dumps({"status": "error", "message": action_result.error}, indent=2)
+            return json.dumps(action_result.data, indent=2)
     except Exception as e:
         return json.dumps({"status": "error", "error": str(e)}, indent=2)
 
@@ -521,11 +481,6 @@ def assign_candidate_to_hunt(
         note: Optional assignment note stored on the enrollment.
     """
     from app.infrastructure.db import SessionFactory
-    from app.candidates.models import Candidate, CandidateTag
-    from app.hunts.models import HuntCandidate
-    from app.hunts.pipeline import add_candidate_to_hunt
-    from sqlalchemy import select
-
     cid = _parse_id(candidate_id, prefixes=("cand_", "candidate_"))
     if not cid:
         return json.dumps({"status": "error", "message": "candidate_id must be numeric or cand_N."}, indent=2)
@@ -538,72 +493,25 @@ def assign_candidate_to_hunt(
             if not resolved:
                 return json.dumps({"status": "error", "message": "Hunt not found."}, indent=2)
 
-            candidate = db.get(Candidate, cid)
-            if not candidate:
-                return json.dumps({"status": "error", "message": f"Candidate {cid} not found."}, indent=2)
+            resolved_id = resolved.id
 
-            if move_from_other_hunts:
-                other = list(
-                    db.scalars(
-                        select(HuntCandidate).where(
-                            HuntCandidate.candidate_id == cid,
-                            HuntCandidate.hunt_id != resolved.id,
-                        )
-                    ).all()
-                )
-                for hc in other:
-                    db.delete(hc)
-                tags = list(
-                    db.scalars(
-                        select(CandidateTag).where(
-                            CandidateTag.candidate_id == cid,
-                            CandidateTag.tag_name.like("Hunt:%"),
-                        )
-                    ).all()
-                )
-                keep_tag = f"Hunt: {resolved.title}".lower()
-                for t in tags:
-                    if (t.tag_name or "").lower() != keep_tag:
-                        db.delete(t)
-                db.commit()
+        from app.actions.api import dispatch_action
+        from app.copilot.session_ctx import get_active_session_id
 
-            hc = add_candidate_to_hunt(
-                db,
-                hunt_id=resolved.id,
-                full_name=candidate.full_name,
-                candidate_id=candidate.id,
-                current_title=candidate.current_title,
-                current_company=candidate.current_company,
-                location=candidate.location,
-                linkedin_url=candidate.linkedin_url,
-                ai_summary=(note or "").strip()
-                or f'Assigned to hunt "{resolved.title}" by Copilot.',
-                match_score=80.0,
-                source_platform="copilot",
-            )
-
-            hunt_tag = f"Hunt: {resolved.title}"
-            existing = {
-                (t.tag_name or "").lower()
-                for t in db.scalars(
-                    select(CandidateTag).where(CandidateTag.candidate_id == cid)
-                ).all()
-            }
-            if hunt_tag.lower() not in existing:
-                db.add(CandidateTag(candidate_id=cid, tag_name=hunt_tag, tag_type="hunt"))
-                db.commit()
-
-            return json.dumps({
-                "status": "success",
-                "action": "assign_candidate_to_hunt",
+        result = dispatch_action(
+            "pipeline.enroll",
+            {
                 "candidate_id": cid,
-                "candidate_name": candidate.full_name,
-                "hunt_id": resolved.id,
-                "hunt_title": resolved.title,
-                "hunt_candidate_id": hc.id if hc else None,
-                "moved": bool(move_from_other_hunts),
-                "message": f"Assigned {candidate.full_name} to '{resolved.title}'.",
-            }, indent=2)
+                "hunt_id": resolved_id,
+                "move_from_other_hunts": move_from_other_hunts,
+                "note": (note or "").strip() or None,
+            },
+            actor_type="agent",
+            session_id=get_active_session_id() or "default",
+        )
+        if not result.success:
+            return json.dumps({"status": "error", "message": result.error}, indent=2)
+        return json.dumps(result.data, indent=2)
     except Exception as e:
         logger.exception("assign_candidate_to_hunt failed")
         return json.dumps({"status": "error", "error": str(e)}, indent=2)
@@ -633,9 +541,10 @@ def read_profile_page(url: str, timeout_ms: int = 25000) -> str:
     try:
         from app.browser.page_reader import enrich_profile_from_url
 
-        raw = enrich_profile_from_url(url, timeout_ms=int(timeout_ms or 25000))
+        raw = enrich_profile_from_url(url, timeout_ms=int(timeout_ms or 25000), save_snapshot=True)
         # Keep payload chat-friendly
         text = (raw.get("summary") or raw.get("text") or "")[:3500]
+        snap = raw.get("snapshot") or {}
         payload = {
             "status": raw.get("status") or ("success" if text else "error"),
             "action": "read_profile_page",
@@ -645,6 +554,7 @@ def read_profile_page(url: str, timeout_ms: int = 25000) -> str:
             "experience_years": raw.get("experience_years"),
             "senior_title": raw.get("senior_title"),
             "summary": text,
+            "snapshot_dir": snap.get("snapshot_dir"),
             "error": raw.get("error"),
         }
         if not text and not payload.get("error"):
@@ -679,15 +589,311 @@ def ask_talent_pool(question: str) -> str:
             "query": result.get("query"),
             "answer": result.get("answer"),
             "sources": result.get("sources") or [],
+            "retrieval": result.get("retrieval") or {},
         }, indent=2)
     except Exception as e:
         logger.exception("ask_talent_pool failed")
         return json.dumps({"status": "error", "error": str(e)}, indent=2)
 
 
+@tool
+def enrich_candidate_profile(
+    candidate_id: str,
+    url: str = "",
+    text: str = "",
+    apply: bool = False,
+    mode: str = "merge",
+) -> str:
+    """Extract structured experience / education / skills from a profile URL or pasted text.
+    Same capability as Candidate Detail Fill from page / Paste text.
+    By default returns a proposed JSON draft for recruiter confirmation.
+    Set apply=true only when the user explicitly asks to save/write to the profile.
+
+    Args:
+        candidate_id: Candidate database id (e.g. '31' or 'cand_31').
+        url: Optional LinkedIn/profile URL to open and read first.
+        text: Optional pasted resume/profile text (used when url empty).
+        apply: If true, write extracted sections to the candidate (merge or replace).
+        mode: 'merge' (default) or 'replace' when apply=true.
+    """
+    from app.infrastructure.db import SessionFactory
+    from app.candidates.service import get_candidate, replace_or_merge_profile_sections
+    from app.candidates.profile_extract import extract_profile_from_text, extract_result_to_dict
+
+    cid = _parse_id(candidate_id, prefixes=("cand_", "candidate_"))
+    if not cid:
+        return json.dumps({"status": "error", "message": "candidate_id is required."}, indent=2)
+
+    source_text = (text or "").strip()
+    try:
+        with SessionFactory() as db:
+            cand = get_candidate(db, cid)
+            if not cand:
+                return json.dumps({"status": "error", "message": f"Candidate {cid} not found."}, indent=2)
+
+        enriched = {}
+        if (url or "").strip():
+            from app.browser.page_reader import enrich_profile_from_url
+            enriched = enrich_profile_from_url(
+                url.strip(),
+                headless=True,
+                candidate_id=cid,
+                save_snapshot=True,
+            )
+            source_text = (enriched.get("text") or source_text or "").strip()
+            if enriched.get("status") != "success" and len(source_text) < 40:
+                return json.dumps({
+                    "status": "error",
+                    "action": "enrich_candidate_profile",
+                    "message": enriched.get("error") or "Page read failed.",
+                    "blocked": enriched.get("blocked"),
+                }, indent=2)
+        elif not source_text:
+            # Fall back to stored resume/summary
+            with SessionFactory() as db:
+                cand = get_candidate(db, cid)
+                if cand and cand.profile:
+                    source_text = (cand.profile.resume_text or cand.profile.summary or "").strip()
+
+        if len(source_text) < 40:
+            return json.dumps({
+                "status": "error",
+                "message": "Need a profile URL, pasted text, or stored resume text to extract.",
+            }, indent=2)
+
+        result = extract_profile_from_text(source_text)
+        draft = extract_result_to_dict(result)
+        if result.status not in {"success"} and not draft.get("experiences") and not draft.get("skills"):
+            return json.dumps({
+                "status": result.status,
+                "action": "enrich_candidate_profile",
+                "error": result.error,
+                "proposal": draft,
+            }, indent=2)
+
+        if apply:
+            with SessionFactory() as db:
+                cand = replace_or_merge_profile_sections(
+                    db,
+                    cid,
+                    experiences=draft.get("experiences") or None,
+                    educations=draft.get("educations") or None,
+                    skills=draft.get("skills") or None,
+                    highlights=draft.get("highlights") or None,
+                    full_name=draft.get("full_name"),
+                    email=draft.get("email"),
+                    phone=draft.get("phone"),
+                    location=draft.get("location") or enriched.get("location"),
+                    current_title=draft.get("current_title"),
+                    current_company=draft.get("current_company"),
+                    pronouns=draft.get("pronouns"),
+                    connection_degree=draft.get("connection_degree"),
+                    connections_count=draft.get("connections_count"),
+                    profile_image_url=(
+                        enriched.get("profile_image_url") or draft.get("profile_image_url")
+                    ),
+                    headline=draft.get("headline"),
+                    summary=draft.get("summary"),
+                    experience_years=draft.get("experience_years"),
+                    mode=mode or "merge",
+                )
+            if not cand:
+                return json.dumps({"status": "error", "message": "Failed to apply sections."}, indent=2)
+            return json.dumps({
+                "status": "success",
+                "action": "enrich_candidate_profile",
+                "applied": True,
+                "mode": mode or "merge",
+                "candidate_id": cid,
+                "counts": {
+                    "experiences": len(draft.get("experiences") or []),
+                    "educations": len(draft.get("educations") or []),
+                    "skills": len(draft.get("skills") or []),
+                },
+            }, indent=2)
+
+        return json.dumps({
+            "status": "success",
+            "action": "enrich_candidate_profile",
+            "applied": False,
+            "message": "Draft only — show the user and call again with apply=true to save.",
+            "candidate_id": cid,
+            "proposal": draft,
+        }, indent=2)
+    except Exception as e:
+        logger.exception("enrich_candidate_profile failed")
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+@tool
+def create_candidate_intake_link(candidate_id: str, hunt_id: str = "") -> str:
+    """Create a magic-link candidate profile/JD form. Returns URL + draft outreach text (does NOT send email).
+    Same as Candidate Detail 'Send profile form'.
+
+    Args:
+        candidate_id: Candidate database id.
+        hunt_id: Optional hunt id to attach JD context to the form.
+    """
+    from app.infrastructure.db import SessionFactory
+    from app.candidates.service import get_candidate
+    from app.candidates.intake_service import (
+        create_intake_request,
+        draft_outreach_message,
+        get_hunt_jd_context,
+        intake_url_for_token,
+    )
+
+    cid = _parse_id(candidate_id, prefixes=("cand_", "candidate_"))
+    if not cid:
+        return json.dumps({"status": "error", "message": "candidate_id is required."}, indent=2)
+    hid = _parse_id(hunt_id) if hunt_id else None
+
+    try:
+        with SessionFactory() as db:
+            cand = get_candidate(db, cid)
+            if not cand:
+                return json.dumps({"status": "error", "message": f"Candidate {cid} not found."}, indent=2)
+            req = create_intake_request(db, cid, hunt_id=hid, mark_sent=True)
+            if not req:
+                return json.dumps({"status": "error", "message": "Could not create intake link."}, indent=2)
+            url = intake_url_for_token(req.token)
+            jd = get_hunt_jd_context(db, hid)
+            msg = draft_outreach_message(
+                cand, url=url, hunt_title=jd.get("title"), role=jd.get("role")
+            )
+            return json.dumps({
+                "status": "success",
+                "action": "create_candidate_intake_link",
+                "candidate_id": cid,
+                "hunt_id": hid,
+                "request_id": req.id,
+                "url": url,
+                "draft_message": msg,
+                "sent": False,
+                "message": "Link created. Copy draft_message into email/LinkedIn — nothing was sent.",
+            }, indent=2)
+    except Exception as e:
+        logger.exception("create_candidate_intake_link failed")
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+@tool
+def list_pending_intake_submissions(candidate_id: str = "") -> str:
+    """List candidate form submissions awaiting recruiter Accept/Reject.
+
+    Args:
+        candidate_id: Optional filter to one candidate.
+    """
+    from app.infrastructure.db import SessionFactory
+    from app.candidates.intake_service import list_pending_submissions
+
+    cid = _parse_id(candidate_id, prefixes=("cand_", "candidate_")) if candidate_id else None
+    try:
+        with SessionFactory() as db:
+            rows = list_pending_submissions(db, candidate_id=cid, limit=50)
+        return json.dumps({
+            "status": "success",
+            "action": "list_pending_intake_submissions",
+            "count": len(rows),
+            "submissions": rows,
+        }, indent=2)
+    except Exception as e:
+        logger.exception("list_pending_intake_submissions failed")
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+@tool
+def apply_intake_submission(
+    submission_id: str,
+    accept: bool = True,
+    mode: str = "merge",
+    confirm: bool = False,
+) -> str:
+    """Accept (merge into Experience/Education/Skills) or reject a pending candidate intake submission.
+
+    Args:
+        submission_id: Intake submission id from list_pending_intake_submissions.
+        accept: True to apply to profile, False to reject.
+        mode: 'merge' or 'replace' when accepting.
+        confirm: Must be True to apply or reject the submission.
+    """
+    from app.infrastructure.db import SessionFactory
+    from app.candidates.intake_service import apply_intake_submission as _apply
+
+    sid = _parse_id(submission_id)
+    if not sid:
+        return json.dumps({"status": "error", "message": "submission_id is required."}, indent=2)
+    if not confirm:
+        action = "accept and apply" if accept else "reject"
+        return json.dumps({
+            "status": "preview",
+            "submission_id": sid,
+            "action": action,
+            "message": f"Preview only. Re-call with confirm=true to {action} this submission.",
+        }, indent=2)
+    try:
+        with SessionFactory() as db:
+            result = _apply(db, sid, mode=mode or "merge", accept=bool(accept))
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        logger.exception("apply_intake_submission failed")
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+@tool
+def list_connected_sites() -> str:
+    """Show which sourcing sites (LinkedIn, Naukri, …) have an encrypted local login session.
+    Tell the user to connect from Settings → Connected sites if a site is disconnected.
+    """
+    try:
+        from app.browser.session_auth import get_platform_connection_status
+
+        rows = get_platform_connection_status()
+        return json.dumps({
+            "status": "success",
+            "action": "list_connected_sites",
+            "sites": rows,
+            "hint": "Connect from Settings → Connected sites (opens Chromium; cookies encrypted locally).",
+        }, indent=2)
+    except Exception as e:
+        logger.exception("list_connected_sites failed")
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
+@tool
+def disconnect_site(platform: str, confirm: bool = False) -> str:
+    """Disconnect a saved site login while retaining encrypted data for seven-day undo.
+
+    Args:
+        platform: linkedin | naukri | github | indeed
+        confirm: Must be True to deactivate the saved browser session.
+    """
+    if not confirm:
+        return json.dumps({
+            "status": "preview",
+            "platform": platform,
+            "message": f"Preview only. Re-call with confirm=true to disconnect {platform}.",
+        }, indent=2)
+    try:
+        from app.browser.session_auth import disconnect_platform
+
+        result = disconnect_platform(platform, actor_type="copilot")
+        result["action"] = "disconnect_site"
+        return json.dumps(result, indent=2)
+    except Exception as e:
+        logger.exception("disconnect_site failed")
+        return json.dumps({"status": "error", "error": str(e)}, indent=2)
+
+
 ENRICH_TOOLS = [
     read_profile_page,
     ask_talent_pool,
+    enrich_candidate_profile,
+    create_candidate_intake_link,
+    list_pending_intake_submissions,
+    apply_intake_submission,
+    list_connected_sites,
+    disconnect_site,
 ]
 
 # Back-compat: export enrich tools alongside mgmt for a single import list

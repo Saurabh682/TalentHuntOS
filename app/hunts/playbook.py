@@ -31,6 +31,7 @@ def _create_entry(
     note: Optional[str] = None,
     author_name: str = "Recruiter",
     metadata: Optional[Dict[str, Any]] = None,
+    commit: bool = True,
 ) -> PlaybookEntry:
     entry = PlaybookEntry(
         entry_type=entry_type,
@@ -48,7 +49,10 @@ def _create_entry(
         metadata_json=json.dumps(metadata) if metadata else None,
     )
     db.add(entry)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(entry)
     return entry
 
@@ -59,6 +63,7 @@ def log_keep(
     hunt_candidate: HuntCandidate,
     note: Optional[str] = None,
     author_name: str = "Recruiter",
+    commit: bool = True,
 ) -> PlaybookEntry:
     hunt = db.get(TalentHunt, hunt_candidate.hunt_id)
     return _create_entry(
@@ -75,6 +80,7 @@ def log_keep(
         note=note,
         author_name=author_name,
         metadata={"hunt_candidate_id": hunt_candidate.id, "match_score": hunt_candidate.match_score},
+        commit=commit,
     )
 
 
@@ -84,6 +90,7 @@ def log_pass(
     hunt_candidate: HuntCandidate,
     note: Optional[str] = None,
     author_name: str = "Recruiter",
+    commit: bool = True,
 ) -> PlaybookEntry:
     hunt = db.get(TalentHunt, hunt_candidate.hunt_id)
     return _create_entry(
@@ -100,6 +107,7 @@ def log_pass(
         note=note,
         author_name=author_name,
         metadata={"hunt_candidate_id": hunt_candidate.id, "match_score": hunt_candidate.match_score},
+        commit=commit,
     )
 
 
@@ -204,13 +212,16 @@ def keep_hunt_candidate(
     *,
     note: Optional[str] = None,
     author_name: str = "Recruiter",
+    commit: bool = True,
 ) -> Dict[str, Any]:
     """Log Keep, move to next pipeline stage (Screening)."""
     hc = db.get(HuntCandidate, hunt_candidate_id)
     if not hc:
         return {"status": "error", "error": "Hunt candidate not found"}
 
-    entry = log_keep(db, hunt_candidate=hc, note=note, author_name=author_name)
+    entry = log_keep(
+        db, hunt_candidate=hc, note=note, author_name=author_name, commit=False
+    )
     hc = db.get(HuntCandidate, hunt_candidate_id)
     if not hc:
         return {"status": "success", "action": "keep", "playbook_entry_id": entry.id, "moved_to_stage": None}
@@ -235,7 +246,10 @@ def keep_hunt_candidate(
                 metadata_json=json.dumps({"playbook_entry_id": entry.id, "note": note}),
             )
         )
+    if commit:
         db.commit()
+    else:
+        db.flush()
 
     return {
         "status": "success",
@@ -251,13 +265,16 @@ def pass_hunt_candidate(
     *,
     note: Optional[str] = None,
     author_name: str = "Recruiter",
+    commit: bool = True,
 ) -> Dict[str, Any]:
     """Log Pass, remove from hunt only, strip Hunt: tag for this hunt."""
     hc = db.get(HuntCandidate, hunt_candidate_id)
     if not hc:
         return {"status": "error", "error": "Hunt candidate not found"}
 
-    entry = log_pass(db, hunt_candidate=hc, note=note, author_name=author_name)
+    entry = log_pass(
+        db, hunt_candidate=hc, note=note, author_name=author_name, commit=False
+    )
     hc = db.get(HuntCandidate, hunt_candidate_id)
     if not hc:
         return {"status": "success", "action": "pass", "playbook_entry_id": entry.id}
@@ -292,7 +309,10 @@ def pass_hunt_candidate(
     )
     db.flush()
     db.delete(hc)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
     return {
         "status": "success",

@@ -87,6 +87,7 @@ def _calculate_candidate_hunt_match(cand: Candidate, search_config: Optional[Hun
                 exp_min=search_config.experience_years_min,
                 exp_max=search_config.experience_years_max,
                 title=cand.current_title,
+                reject_unknown=True,
             ):
                 return 0.0
             if cand.experience_years is not None:
@@ -155,60 +156,89 @@ def run_autopilot_hunt_job(hunt_id: int) -> Dict[str, Any]:
             match_score = _calculate_candidate_hunt_match(cand, search_config, target_role)
 
             # Require real overlap (old 0.40 base score matched everyone)
-            if match_score >= 0.55:
-                matched_count += 1
-                dna = generate_candidate_dna(cand)
-                ai_summary = (
-                    f"AutoPilot matched candidate '{cand.full_name}' with {int(match_score * 100)}% relevance. "
-                    f"Seniority index: {dna.seniority_index}, Stability: {dna.tenure_stability_score}. "
-                    f"Skills: {', '.join(dna.normalized_skills[:5]) if dna.normalized_skills else 'N/A'}."
-                )
+            if match_score < 0.55:
+                continue
 
-                hunt_cand = HuntCandidate(
-                    hunt_id=hunt.id,
-                    candidate_id=cand.id,
-                    stage_id=stage_id,
-                    full_name=cand.full_name,
-                    email=cand.email,
-                    phone=cand.phone,
-                    current_title=cand.current_title,
-                    current_company=cand.current_company,
-                    location=cand.location,
-                    linkedin_url=cand.linkedin_url,
-                    github_url=cand.github_url,
-                    portfolio_url=cand.portfolio_url,
-                    match_score=match_score,
-                    ai_summary=ai_summary,
-                    status="Active",
+            # Hard location filter (same as web sourcing / pipeline reconcile)
+            hunt_location = (hunt.location or "").strip() or "India"
+            if search_config and search_config.locations:
+                hunt_location = (search_config.locations or hunt_location).strip() or hunt_location
+            try:
+                from app.hunts.location import location_matches_target
+                summary = cand.profile.summary if cand.profile else ""
+                resume = cand.profile.resume_text if cand.profile else ""
+                loc_ok, loc_reason = location_matches_target(
+                    candidate_location=cand.location,
+                    target_location=hunt_location,
+                    profile_url=cand.linkedin_url or "",
+                    page_text=f"{summary or ''} {resume or ''}",
+                    reject_unknown=True,
                 )
-                db.add(hunt_cand)
-                db.flush()
+                if not loc_ok:
+                    logger.debug(
+                        "AutoPilot skip %s location (%s want %s)",
+                        cand.full_name,
+                        loc_reason,
+                        hunt_location,
+                    )
+                    continue
+            except Exception as loc_exc:
+                logger.warning("AutoPilot location check failed: %s", loc_exc)
+                continue
 
-                # Tag master candidate with hunt heading so Candidates page shows the label
-                try:
-                    from app.candidates.service import add_candidate_tag
-                    from app.candidates.models import CandidateTag
-                    hunt_tag = f"Hunt: {hunt.title}"
-                    has_tag = db.scalars(
-                        select(CandidateTag).where(
-                            CandidateTag.candidate_id == cand.id,
-                            CandidateTag.tag_name == hunt_tag,
-                        ).limit(1)
-                    ).first()
-                    if not has_tag:
-                        db.add(CandidateTag(candidate_id=cand.id, tag_name=hunt_tag, color="#19d3c5"))
-                except Exception as tag_exc:
-                    logger.warning("Could not tag candidate %s with hunt label: %s", cand.id, tag_exc)
+            matched_count += 1
+            dna = generate_candidate_dna(cand)
+            ai_summary = (
+                f"AutoPilot matched candidate '{cand.full_name}' with {int(match_score * 100)}% relevance. "
+                f"Seniority index: {dna.seniority_index}, Stability: {dna.tenure_stability_score}. "
+                f"Skills: {', '.join(dna.normalized_skills[:5]) if dna.normalized_skills else 'N/A'}."
+            )
 
-                activity = HuntActivity(
-                    hunt_id=hunt.id,
-                    candidate_id=hunt_cand.id,
-                    activity_type="autopilot_match",
-                    description=f"AutoPilot continuously flagged candidate {cand.full_name} ({int(match_score * 100)}% match).",
-                    metadata_json=json.dumps({"match_score": match_score, "scanned_at": datetime.now(timezone.utc).isoformat()}),
-                )
-                db.add(activity)
-                added_count += 1
+            hunt_cand = HuntCandidate(
+                hunt_id=hunt.id,
+                candidate_id=cand.id,
+                stage_id=stage_id,
+                full_name=cand.full_name,
+                email=cand.email,
+                phone=cand.phone,
+                current_title=cand.current_title,
+                current_company=cand.current_company,
+                location=cand.location,
+                linkedin_url=cand.linkedin_url,
+                github_url=cand.github_url,
+                portfolio_url=cand.portfolio_url,
+                match_score=match_score,
+                ai_summary=ai_summary,
+                status="Active",
+            )
+            db.add(hunt_cand)
+            db.flush()
+
+            # Tag master candidate with hunt heading so Candidates page shows the label
+            try:
+                from app.candidates.service import add_candidate_tag
+                from app.candidates.models import CandidateTag
+                hunt_tag = f"Hunt: {hunt.title}"
+                has_tag = db.scalars(
+                    select(CandidateTag).where(
+                        CandidateTag.candidate_id == cand.id,
+                        CandidateTag.tag_name == hunt_tag,
+                    ).limit(1)
+                ).first()
+                if not has_tag:
+                    db.add(CandidateTag(candidate_id=cand.id, tag_name=hunt_tag, color="#19d3c5"))
+            except Exception as tag_exc:
+                logger.warning("Could not tag candidate %s with hunt label: %s", cand.id, tag_exc)
+
+            activity = HuntActivity(
+                hunt_id=hunt.id,
+                candidate_id=hunt_cand.id,
+                activity_type="autopilot_match",
+                description=f"AutoPilot continuously flagged candidate {cand.full_name} ({int(match_score * 100)}% match).",
+                metadata_json=json.dumps({"match_score": match_score, "scanned_at": datetime.now(timezone.utc).isoformat()}),
+            )
+            db.add(activity)
+            added_count += 1
 
         # Removed dummy candidate auto-sourcing to ensure only real profiles are added to the pipeline.
 

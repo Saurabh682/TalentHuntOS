@@ -22,13 +22,23 @@ REPEAT_HITS_BEFORE_STOP = 4
 TOOL_HUMAN_MAPPINGS = {
     "batch_search_the_web": "🔍 Searching LinkedIn, GitHub & web portfolios in parallel...",
     "search_the_web": "🔍 Searching the web for candidates...",
-    "source_talent_for_hunt": "🎯 Sourcing LinkedIn/Naukri people into this hunt...",
+    "source_talent_for_hunt": "🎯 Searching configured profile sources for this hunt...",
     "add_candidate_to_database": "💾 Saving candidate profiles to your Talent Hunt pipeline...",
     "verify_candidate_match": "🧠 Agentic Critic: Verifying candidate match against job requirements...",
     "search_candidates": "📂 Querying internal talent database...",
     "message_candidate": "✉️ Drafting personalized candidate outreach message...",
     "start_talent_hunt": "🚀 Launching Virtual Recruiting Agency background thread...",
     "remove_candidates_from_hunt": "🗑️ Removing candidates from the hunt pipeline...",
+    "delete_candidates_from_database": "Archiving candidates with a seven-day undo window...",
+    "show_action_history": "Reviewing recent actions...",
+    "undo_recent_action": "Undoing the selected action...",
+    "get_candidate_record": "Reading the canonical Candidate record...",
+    "update_candidate_record": "Updating the Candidate record with Undo enabled...",
+    "approve_discovery": "Approving the discovery and starting its deep scan...",
+    "reject_discovery": "Recording the Discovery decision with Undo enabled...",
+    "move_pipeline_by_id": "Moving the candidate to the requested pipeline stage...",
+    "archive_hunt_by_id": "Preparing a trusted preview to archive this hunt...",
+    "retry_background_job": "Retrying the stored background job...",
     "consult_sourcing_playbook": "📘 Checking the sourcing playbook...",
 }
 
@@ -97,7 +107,8 @@ def _build_active_hunt_context(session_id: str) -> str:
                 f"3) Stay inside experience band '{exp}' and role '{hunt.target_role or hunt.title}'.\n"
                 "4) When they ask to find/look for/source N talents or search LinkedIn, call "
                 f"`source_talent_for_hunt` with hunt_id='{hunt.id}' and target_count=N.\n"
-                f"5) For remove/clear: remove_candidates_from_hunt(hunt_id='{hunt.id}', confirm=true) then re-source.\n"
+                f"5) For remove/clear: preview with remove_candidates_from_hunt(hunt_id='{hunt.id}', "
+                "confirm=false), then use confirm=true only after explicit user confirmation.\n"
                 "6) Never present candidates from unrelated professions (e.g. animators on a sales hunt).\n"
                 "7) Prefer read_profile_page before trusting a LinkedIn URL."
             )

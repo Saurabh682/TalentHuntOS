@@ -1,0 +1,15 @@
+- main [ref=e2]:
+  - generic [ref=e3]: TalentHunt OS
+  - heading "Welcome back" [level=1] [ref=e4]
+  - paragraph [ref=e5]: Sign in to access candidates, campaigns, and connected sourcing sessions.
+  - generic [ref=e6]:
+    - generic [ref=e7]: Username
+    - textbox "Username" [ref=e8]
+    - generic [ref=e9]: Password
+    - generic [ref=e10]:
+      - textbox "Password" [ref=e11]
+      - button "Hide password" [active] [pressed] [ref=e17] [cursor=pointer]: HIDE
+    - button "Sign in" [ref=e13] [cursor=pointer]
+    - alert [ref=e14]
+  - button "Forgot password?" [ref=e15] [cursor=pointer]
+  - generic [ref=e16]: Local-only access. Recruiter data and credentials remain on this computer.

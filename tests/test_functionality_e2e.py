@@ -64,6 +64,17 @@ def test_e2e_talent_hunt_creation_and_autopilot_sourcing():
         assert hunt.search_config.required_skills == "Python, React, TypeScript, FastAPI"
         hunt_id = hunt.id
 
+        matching_candidate = create_candidate(
+            db,
+            full_name=f"E2E Matching Architect {uid}",
+            email=f"e2e.architect.{uid}@example.com",
+            location="San Francisco, CA",
+            current_title=f"Full Stack Architect {uid}",
+            experience_years=7,
+            skills=["Python", "React", "TypeScript", "FastAPI"],
+        )
+        assert matching_candidate is not None
+
     # 2. Trigger AI Auto-Pilot Sourcing
     res = run_autopilot_hunt_job(hunt_id)
     assert res["status"] == "success"

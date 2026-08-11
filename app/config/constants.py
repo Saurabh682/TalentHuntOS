@@ -4,6 +4,10 @@ APP_NAME = "TalentHunt OS"
 APP_VERSION = "0.1.0"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8080
+APP_URL = f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/"
+
+# Keep sourcing progress and cancellation bounded while supporting larger pool fills.
+MAX_SOURCING_TARGET = 100
 
 # Local AI Defaults
 LLAMA_SERVER_PORT = 8081

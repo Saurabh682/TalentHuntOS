@@ -483,6 +483,7 @@ def create_email_account(
     smtp_port: int = 587,
     smtp_username: Optional[str] = None,
     smtp_password: Optional[str] = None,
+    use_ssl: bool = True,
     is_default: bool = False,
 ) -> Optional[EmailAccount]:
     """Register an email account for outreach.
@@ -505,13 +506,16 @@ def create_email_account(
             # Reset previous default
             db.execute(update(EmailAccount).values(is_default=False))
 
+        from app.infrastructure.secret_box import seal
+
         acc = EmailAccount(
             email_address=email_address,
             display_name=display_name or email_address.split("@")[0].title(),
             smtp_host=smtp_host,
             smtp_port=smtp_port,
             smtp_username=smtp_username or email_address,
-            smtp_password=smtp_password,
+            smtp_password=seal(smtp_password) if smtp_password else None,
+            use_ssl=use_ssl,
             is_default=is_default,
         )
         db.add(acc)
@@ -521,6 +525,53 @@ def create_email_account(
     except SQLAlchemyError as e:
         db.rollback()
         logger.error(f"Error creating email account: {e}", exc_info=True)
+        return None
+
+
+def save_email_account(
+    db: Session,
+    *,
+    account_id: Optional[int] = None,
+    email_address: str,
+    display_name: Optional[str] = None,
+    smtp_host: str,
+    smtp_port: int,
+    smtp_username: Optional[str] = None,
+    smtp_password: Optional[str] = None,
+    use_ssl: bool = True,
+    is_default: bool = True,
+) -> Optional[EmailAccount]:
+    """Create or update an SMTP account without ever persisting plaintext secrets."""
+    from app.infrastructure.secret_box import seal
+
+    try:
+        account = db.get(EmailAccount, account_id) if account_id else None
+        if account is None:
+            account = db.scalar(
+                select(EmailAccount).where(EmailAccount.email_address == email_address.strip())
+            )
+        if account is None:
+            account = EmailAccount(email_address=email_address.strip())
+            db.add(account)
+
+        if is_default:
+            db.execute(update(EmailAccount).values(is_default=False))
+        account.email_address = email_address.strip()
+        account.display_name = (display_name or "").strip() or None
+        account.smtp_host = smtp_host.strip()
+        account.smtp_port = int(smtp_port)
+        account.smtp_username = (smtp_username or "").strip() or account.email_address
+        if smtp_password:
+            account.smtp_password = seal(smtp_password)
+        account.use_ssl = bool(use_ssl)
+        account.is_default = bool(is_default)
+        account.is_active = True
+        db.commit()
+        db.refresh(account)
+        return account
+    except (SQLAlchemyError, ValueError) as exc:
+        db.rollback()
+        logger.error("Error saving email account: %s", exc, exc_info=True)
         return None
 
 
@@ -553,6 +604,13 @@ def get_default_email_account(db: Session) -> Optional[EmailAccount]:
         acc = db.scalar(select(EmailAccount).where(EmailAccount.is_default == True).limit(1))
         if not acc:
             acc = db.scalar(select(EmailAccount).limit(1))
+        if acc and acc.smtp_password:
+            from app.infrastructure.secret_box import is_sealed, seal
+
+            if not is_sealed(acc.smtp_password):
+                acc.smtp_password = seal(acc.smtp_password)
+                db.commit()
+                db.refresh(acc)
         return acc
     except SQLAlchemyError as e:
         logger.error(f"Error retrieving default email account: {e}", exc_info=True)
@@ -630,3 +688,139 @@ def get_browser_session(db: Session, session_id: int) -> Optional[BrowserSession
     except SQLAlchemyError as e:
         logger.error(f"Error retrieving browser session {session_id}: {e}", exc_info=True)
         return None
+
+
+def upsert_browser_session_cookies(
+    db: Session,
+    *,
+    platform: str,
+    cookies: List[Dict[str, Any]],
+    target_url: Optional[str] = None,
+    session_name: Optional[str] = None,
+) -> Optional[BrowserSession]:
+    """Create or update the active session for a platform with encrypted cookies."""
+    from app.infrastructure.secret_box import seal
+
+    plat = (platform or "").strip().lower()
+    if not plat or not cookies:
+        return None
+    try:
+        # Deactivate older sessions for this platform
+        older = list(
+            db.scalars(
+                select(BrowserSession).where(
+                    BrowserSession.platform == plat,
+                    BrowserSession.is_active.is_(True),
+                )
+            ).all()
+        )
+        for row in older:
+            row.is_active = False
+
+        sealed = seal(json.dumps(cookies))
+        sess = BrowserSession(
+            platform=plat,
+            session_name=session_name or f"{plat} (local)",
+            target_url=target_url or f"https://www.{plat}.com",
+            cookies_json=sealed,
+            headers_json=None,  # clear until verify runs
+            is_active=True,
+            last_accessed_at=datetime.now(timezone.utc),
+        )
+        db.add(sess)
+        db.commit()
+        db.refresh(sess)
+        return sess
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error("Error upserting browser session cookies: %s", e, exc_info=True)
+        return None
+    except Exception as e:
+        db.rollback()
+        logger.error("Unexpected error sealing browser cookies: %s", e, exc_info=True)
+        return None
+
+
+def get_decrypted_cookies_for_platform(db: Session, platform: str) -> Optional[List[Dict[str, Any]]]:
+    """Return cookie list for the latest active session, decrypting when sealed."""
+    from app.infrastructure.secret_box import open_secret, seal, is_sealed
+
+    plat = (platform or "").strip().lower()
+    try:
+        sessions = list_browser_sessions(db, platform=plat)
+        for sess in sessions:
+            if not sess.is_active or not sess.cookies_json:
+                continue
+            try:
+                plain = open_secret(sess.cookies_json)
+            except ValueError:
+                logger.error("Cannot decrypt cookies for session %s", sess.id)
+                sess.is_active = False
+                sess.headers_json = json.dumps({
+                    "verified": False,
+                    "detail": "Saved session could not be decrypted after restart. Reconnect required.",
+                })
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                continue
+            raw = json.loads(plain)
+            cookies = raw if isinstance(raw, list) else raw.get("cookies") if isinstance(raw, dict) else None
+            if not isinstance(cookies, list) or not cookies:
+                continue
+            # Lazy-migrate legacy plaintext → sealed
+            if not is_sealed(sess.cookies_json):
+                try:
+                    sess.cookies_json = seal(json.dumps(cookies))
+                    sess.last_accessed_at = datetime.now(timezone.utc)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+            else:
+                try:
+                    sess.last_accessed_at = datetime.now(timezone.utc)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+            return cookies
+    except Exception as e:
+        logger.error("get_decrypted_cookies_for_platform failed: %s", e, exc_info=True)
+    return None
+
+
+def deactivate_browser_sessions_for_platform(
+    db: Session,
+    platform: str,
+    *,
+    actor_type: str = "ui",
+    session_id: str | None = None,
+) -> int:
+    """Deactivate a platform while retaining encrypted data for seven-day undo."""
+    plat = (platform or "").strip().lower()
+    try:
+        rows = list(
+            db.scalars(select(BrowserSession).where(BrowserSession.platform == plat)).all()
+        )
+        active_ids = [row.id for row in rows if row.is_active]
+        for row in rows:
+            row.is_active = False
+        if active_ids:
+            from app.actions.history import record_action
+
+            record_action(
+                db,
+                action_type="disconnect_site",
+                summary=f"Disconnected {plat}",
+                actor_type=actor_type,
+                session_id=session_id,
+                payload={"platform": plat, "session_count": len(active_ids)},
+                undo_payload={"platform": plat, "active_session_ids": active_ids},
+            )
+        else:
+            db.commit()
+        return len(rows)
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error("Error deactivating browser sessions: %s", e, exc_info=True)
+        return 0

@@ -7,6 +7,7 @@ import threading
 from langchain_core.tools import tool
 
 from app.agents.workflows import run_talent_hunt_workflow
+from app.config.constants import MAX_SOURCING_TARGET
 
 logger = logging.getLogger("talenthunt.copilot.tools")
 
@@ -15,6 +16,51 @@ active_hunts = {}
 active_hunts_lock = threading.Lock()
 
 from typing import Union, List
+
+
+@tool
+def delete_candidates_from_database(confirm: bool = False) -> str:
+    """Preview or delete all candidates in the global database. This does not require an active hunt.
+
+    Deletion archives records and can be undone for seven days. Always call with confirm=false first;
+    call with confirm=true only after the user explicitly confirms the preview.
+    """
+    from app.copilot.direct_actions import run_global_candidate_delete
+    from app.copilot.session_ctx import get_active_session_id
+
+    return run_global_candidate_delete(
+        session_id=get_active_session_id() or "default", confirm=confirm
+    )
+
+
+@tool
+def show_action_history(days: int = 7) -> str:
+    """Show recent actions and whether each action can still be undone."""
+    from app.actions.history import list_recent_actions, serialize_action
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        items = [serialize_action(item, db) for item in list_recent_actions(db, days=days)]
+    if not items:
+        return "No actions were recorded in this period."
+    return json.dumps({"status": "success", "days": days, "actions": items}, indent=2)
+
+
+@tool
+def undo_recent_action(action_id: str = "latest") -> str:
+    """Undo an action from Action history. Use 'latest' for the most recent undoable action."""
+    from app.actions.api import dispatch_action
+    from app.copilot.session_ctx import get_active_session_id
+
+    result = dispatch_action(
+        "actions.undo",
+        {"action_id": action_id},
+        actor_type="agent",
+        session_id=get_active_session_id() or "default",
+    )
+    if result.success:
+        return result.data["message"] + "."
+    return f"Could not undo that action: {result.error}"
 
 @tool
 def start_talent_hunt(
@@ -54,6 +100,7 @@ def start_talent_hunt(
 
     try:
         from app.hunts.launch import launch_hunt_and_start_sourcing
+        from app.copilot.session_ctx import get_active_session_id
 
         result = launch_hunt_and_start_sourcing(
             title=title,
@@ -64,6 +111,8 @@ def start_talent_hunt(
             required_skills=skills_str or None,
             experience=(experience or "").strip() or None,
             industry=(industry or "").strip() or None,
+            actor_type="agent",
+            session_id=get_active_session_id() or "default",
         )
         payload = {
             "status": "success",
@@ -512,8 +561,9 @@ def source_talent_for_hunt(
     skills: str = "",
     location: str = "India",
     target_count: int = 25,
+    platforms: str = "",
 ) -> str:
-    """PRIMARY tool to find real people on LinkedIn/Naukri and add them to a hunt pipeline.
+    """PRIMARY tool to find real people across configured public profile sources.
     Prefer this over search_the_web / batch_search_the_web when the user asks to look for
     N talents, source LinkedIn candidates, or refill a hunt.
 
@@ -525,7 +575,9 @@ def source_talent_for_hunt(
         role: Target role (defaults to hunt target_role).
         skills: Comma-separated skills (defaults to hunt search_config).
         location: Location (default India).
-        target_count: Desired number of new people to try to add (capped at 40).
+        target_count: Desired number of people to retain for review (capped at 100).
+        platforms: Optional comma-separated source restriction, such as "naukri" or
+            "linkedin,github,behance". Leave empty to use every configured source.
     """
     from app.infrastructure.db import SessionFactory
     from app.hunts.service import get_hunt
@@ -550,25 +602,39 @@ def source_talent_for_hunt(
             if not skill_str and hunt.search_config and hunt.search_config.required_skills:
                 skill_str = hunt.search_config.required_skills
 
-        target = max(1, min(int(target_count or 25), 40))
+        target = max(1, min(int(target_count or 25), MAX_SOURCING_TARGET))
         # max_per_query ~ enough DDG hits across 5 queries
         per_q = max(6, min(12, (target // 2) + 2))
 
         from app.hunts import sourcing_jobs
 
-        # New request supersedes prior crawl (never silent no-op)
         if sourcing_jobs.is_busy():
-            sourcing_jobs.cancel_all()
-            sourcing_jobs.force_clear_running()
+            return json.dumps({
+                "status": "busy",
+                "message": (
+                    "A talent search is already running. Continue answering non-search questions, "
+                    "but do not start another search. The user can cancel the active search first."
+                ),
+            }, indent=2)
 
         job_id = sourcing_jobs.start_job(
             hunt_id=numeric_id,
             hunt_title=hunt_title,
             label=f"Sourcing {target} · {role_label}",
+            payload={
+                "role": role_label,
+                "skills": skill_str or "",
+                "location": loc,
+                "target_count": target,
+                "platforms": platforms or "",
+                "approval_required": True,
+                "time_budget_sec": 180,
+            },
         )
 
         def _bg_source():
             try:
+                logger.info("[sourcing] background thread start job=%s hunt=%s", job_id, numeric_id)
                 result = source_candidates_for_hunt(
                     numeric_id,
                     role=role_label,
@@ -577,9 +643,12 @@ def source_talent_for_hunt(
                     hunt_title=hunt_title,
                     max_per_query=per_q,
                     enrich_pages=True,
-                    verify_with_ai=True,
+                    verify_with_ai=False,
                     job_id=job_id,
                     target_added=target,
+                    approval_required=True,
+                    time_budget_sec=180,
+                    platforms=platforms or None,
                 )
                 logger.info(
                     "Background source_talent_for_hunt hunt=%s job=%s result=%s",
@@ -607,11 +676,12 @@ def source_talent_for_hunt(
             "role": role_label,
             "location": loc,
             "requested": target,
+            "platforms": platforms or "all configured sources",
             "message": (
-                f"Started job {job_id}: Playwright-open + AI-verify for ~{target} "
-                f"LinkedIn people on '{hunt_title}'. "
+                f"Started job {job_id}: discovery for ~{target} people from "
+                f"{platforms or 'all configured sources'} on '{hunt_title}'. "
                 "Tell the user to watch the Copilot busy banner (Cancel available) "
-                "and refresh Pipeline when it finishes."
+                "and open Discoveries, including the Common Pool, when it finishes."
             ),
         }, indent=2)
     except Exception as e:
@@ -683,6 +753,7 @@ def remove_candidates_from_hunt(
     from app.hunts.service import get_hunt, list_hunts
     from app.hunts.pipeline import clear_hunt_candidates
     from app.hunts.models import HuntCandidate, HuntStage
+    from app.copilot.session_ctx import get_active_session_id
     from sqlalchemy import select, func
 
     try:
@@ -769,11 +840,14 @@ def remove_candidates_from_hunt(
                 hunt.id,
                 name_contains=name_contains or None,
                 stage_name=stage_name or None,
+                actor_type="copilot",
+                session_id=get_active_session_id() or "default",
             )
             result["status"] = "success"
             result["message"] = (
                 f"Removed {result['removed']} candidate enrollment(s) from hunt "
-                f"'{result.get('hunt_title')}'. Master profiles on Candidates page were kept."
+                f"'{result.get('hunt_title')}'. Master profiles on Candidates page were kept, "
+                "and this can be undone from Action history for 7 days."
             )
             return json.dumps(result, indent=2)
     except Exception as e:
@@ -782,6 +856,8 @@ def remove_candidates_from_hunt(
 
 
 COPILOT_TOOLS = [
+    delete_candidates_from_database,
+    show_action_history,
     start_talent_hunt,
     search_candidates,
     message_candidate,
@@ -801,5 +877,9 @@ COPILOT_TOOLS = COPILOT_TOOLS + list(MGMT_TOOLS)
 
 
 def get_copilot_tools():
-    """Return list of active Copilot tools."""
-    return COPILOT_TOOLS
+    """Return one unique, audited tool surface with registry actions generated last."""
+    from app.copilot.action_adapters import get_generated_action_tools, wrap_tool_for_audit
+
+    tools = list(COPILOT_TOOLS) + get_generated_action_tools()
+    unique = {item.name: item for item in tools}
+    return [wrap_tool_for_audit(item) for item in unique.values()]

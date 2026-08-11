@@ -47,6 +47,7 @@ def render_communications():
                 ui.label('Multi-channel candidate messaging, templates and automated sequences.').classes('th-muted')
 
             with ui.row().classes('items-center gap-3'):
+                ui.badge('Email not configured', color='blue-grey').classes('text-[10px]')
                 ui.button(
                     '⚡ Run Drip Engine',
                     on_click=lambda: run_drip_engine()
@@ -303,9 +304,19 @@ def render_communications():
                         ui.notify('Message body cannot be empty.', type='negative')
                         return
                     cid = cand_select.value
+                    send_result = None
                     with SessionFactory() as db:
                         cand_obj = db.get(Candidate, cid) if cid else None
                         recipient_addr = cand_obj.email if (cand_obj and cand_obj.email) else "candidate@example.com"
+                        if channel_select.value == "email" and dir_select.value == "outbound":
+                            if not cand_obj or not cand_obj.email:
+                                ui.notify('The selected candidate has no email address.', type='negative')
+                                return
+                            send_result = send_email(
+                                to_email=cand_obj.email,
+                                subject=subj_in.value.strip() or "TalentHunt Outreach",
+                                body=body_in.value.strip(),
+                            )
                         log_communication(
                             db,
                             candidate_id=cid,
@@ -315,15 +326,16 @@ def render_communications():
                             recipient=recipient_addr if dir_select.value == "outbound" else "recruiter@talenthunt.os",
                             subject=subj_in.value.strip() or None,
                             body=body_in.value.strip(),
-                            status="sent" if dir_select.value == "outbound" else "received",
+                            status=(
+                                send_result["status"]
+                                if send_result is not None
+                                else ("logged" if dir_select.value == "outbound" else "received")
+                            ),
                         )
-                        if channel_select.value == "email" and dir_select.value == "outbound" and cand_obj and cand_obj.email:
-                            send_email(
-                                to_address=cand_obj.email,
-                                subject=subj_in.value.strip() or "TalentHunt Outreach",
-                                body_text=body_in.value.strip(),
-                            )
-                    ui.notify('Communication logged successfully!', type='positive')
+                    if send_result is not None and not send_result["success"]:
+                        ui.notify(send_result["error"], type='warning')
+                    else:
+                        ui.notify('Communication logged successfully!', type='positive')
                     dialog.close()
                     refresh_logs()
 

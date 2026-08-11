@@ -1,0 +1,5 @@
+{
+  "provider": "kokoro",
+  "edge_voice": "en-US-AriaNeural",
+  "kokoro_voice": "af_nova"
+}

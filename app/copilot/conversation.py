@@ -1,11 +1,12 @@
-import os
 import json
 import time
 import threading
+from pathlib import Path
 from typing import Dict, List, Any
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
+from app.config.settings import DATA_DIR
 
-STORE_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "conversations_store.json")
+STORE_FILE_PATH = DATA_DIR / "conversations_store.json"
 
 class ConversationManager:
     """In-memory and disk-persistent conversation context manager."""
@@ -19,9 +20,9 @@ class ConversationManager:
     def _load_from_disk(self) -> None:
         """Load conversation histories from disk on startup."""
         try:
-            abs_path = os.path.abspath(STORE_FILE_PATH)
-            if os.path.exists(abs_path):
-                with open(abs_path, "r", encoding="utf-8") as f:
+            path = Path(STORE_FILE_PATH)
+            if path.exists():
+                with path.open("r", encoding="utf-8") as f:
                     data = json.load(f)
                     if isinstance(data, dict):
                         self._store = data
@@ -32,9 +33,9 @@ class ConversationManager:
     def _save_to_disk(self) -> None:
         """Save conversation histories to disk."""
         try:
-            abs_path = os.path.abspath(STORE_FILE_PATH)
-            os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-            with open(abs_path, "w", encoding="utf-8") as f:
+            path = Path(STORE_FILE_PATH)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("w", encoding="utf-8") as f:
                 json.dump(self._store, f, indent=2, ensure_ascii=False)
         except Exception as e:
             import logging

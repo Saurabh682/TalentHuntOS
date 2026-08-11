@@ -68,8 +68,8 @@ def render_dashboard():
                 ('ACTIVE HUNTS', str(active_hunts), 'Campaigns running'),
                 ('CANDIDATES SOURCED', str(sourced), 'Talent pool size'),
                 ('PIPELINE CONVERSION', f'{conversion}%', 'Sourced → Hired'),
-                ('AI ACTIONS TODAY', str(ai_actions), 'Auto-pilot & Copilot'),
-                ('NET COST SAVED', _fmt_inr(float(cost_saved) * 1000 if cost_saved < 100 else cost_saved), 'vs cloud AI spend'),
+                ('RECORDED AI ACTIONS', str(ai_actions), 'Audited operations'),
+                ('RECORDED AI SAVINGS', _fmt_inr(float(cost_saved) * 1000 if cost_saved < 100 else cost_saved), 'Provider telemetry'),
             ]
             for label, num, sub in stats:
                 with ui.element('div').classes('th-stat-card'):
@@ -78,7 +78,7 @@ def render_dashboard():
                     ui.label(sub).classes('th-up')
 
         # Lower section: funnel + side panels
-        with ui.element('div').style(
+        with ui.element('div').classes('th-dashboard-lower').style(
             'display:flex;flex-direction:row;flex-wrap:nowrap;align-items:flex-start;'
             'gap:13px;width:100%;height:auto'
         ):
@@ -104,7 +104,7 @@ def render_dashboard():
 
                 ui.element('div').classes('th-chart-spark')
 
-            with ui.element('div').style(
+            with ui.element('div').classes('th-dashboard-side').style(
                 'width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:13px'
             ):
                 with ui.element('div').classes('th-panel').style('padding:16px'):
@@ -127,15 +127,25 @@ def render_dashboard():
                         ui.label('AI Insights').style('font-size:13px;font-weight:600;color:#edf5f7')
                         ui.label('Live').classes('th-muted')
 
-                    channels = sourcing.get("channels_breakdown") if isinstance(sourcing, dict) else None
+                    channels = sourcing.get("channels") if isinstance(sourcing, dict) else None
                     if isinstance(channels, dict) and channels:
                         top_source = max(channels.items(), key=lambda x: x[1])[0]
                     else:
                         top_source = "Internal DB"
                     insights = [
                         ('Top performing source', f'{top_source} is driving quality candidates into active hunts.'),
-                        ('Time to fill', f'Average time to fill is {ttf or "—"} days.'),
-                        ('Cost efficiency', f'Estimated cloud AI spend avoided: {_fmt_inr(float(cost_saved) * 1000 if cost_saved < 100 else cost_saved)}.'),
+                        (
+                            'Time to fill',
+                            f'Average time to fill is {ttf} days.'
+                            if ttf
+                            else 'No hires have been recorded yet.',
+                        ),
+                        (
+                            'Cost telemetry',
+                            f'Recorded cloud AI spend avoided: {_fmt_inr(float(cost_saved) * 1000 if cost_saved < 100 else cost_saved)}.'
+                            if cost_saved
+                            else 'No provider cost telemetry has been recorded yet.',
+                        ),
                     ]
                     for title, desc in insights:
                         with ui.element('div').classes('th-insight'):

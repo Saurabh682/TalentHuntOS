@@ -1,0 +1,39 @@
+TalentHunt OS - Executive Analytics Report
+Generated At,2026-08-09 20:20:40 UTC
+
+--- EXECUTIVE KPI SUMMARY ---
+Metric,Value
+Total Talent Hunts,1
+Active Hunts,1
+Completed Hunts,0
+Total Candidates Sourced,1
+Candidates Interviewing,0
+Candidates Hired,0
+Funnel Conversion Rate (%),0.0%
+Avg Time-to-Fill (Days),1.0 days
+Outreach Messages Sent,0
+Outreach Replies Received,0
+Outreach Response Rate (%),0.0%
+AI Operations Executed,1
+Estimated Cost Saved ($),$0.07
+
+--- TALENT RECRUITMENT FUNNEL ---
+Stage Name,Candidate Count,Overall Conversion (%),Drop-off Rate (%)
+Sourced,0,0.0%,0.0%
+Contacted,0,0.0%,0.0%
+Screening,0,0.0%,0.0%
+Interview,0,0.0%,0.0%
+Offer,0,0.0%,0.0%
+Hired,0,0.0%,0.0%
+
+--- HUNT VELOCITY & TIME-TO-FILL ---
+Hunt Title,Target Role,Status,Total Candidates,Hired Count,Days Open,Time to Fill (Days)
+Audit Backend Hunt,Backend Engineer,Active,0,0,1,1
+
+--- AI ENGINE COST TRACKER ---
+Total AI Operations,142
+Local Edge Operations (Llama 3),92
+Cloud API Operations,50
+Actual Cloud API Cost ($),$0.56
+Net Cost Saved ($),$4.89
+

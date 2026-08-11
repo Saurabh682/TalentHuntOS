@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "settings": {
+    "llama_server_host": "127.0.0.9",
+    "llama_server_port": 4321,
+    "enable_local_ai": false
+  },
+  "secrets": {
+    "gemini_api_key": "sealed:",
+    "openai_api_key": "sealed:audit-secret",
+    "anthropic_api_key": "sealed:",
+    "deepgram_api_key": "sealed:",
+    "elevenlabs_api_key": "sealed:"
+  }
+}

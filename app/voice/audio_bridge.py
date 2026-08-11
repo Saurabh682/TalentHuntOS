@@ -35,6 +35,11 @@ manager = AudioBridgeConnectionManager()
 @app.websocket("/ws/audio")
 async def audio_websocket_endpoint(websocket: WebSocket):
     """FastAPI WebSocket endpoint for bi-directional real-time audio streaming."""
+    from app.infrastructure.auth import SESSION_COOKIE, is_authenticated
+
+    if not is_authenticated(websocket.cookies.get(SESSION_COOKIE)):
+        await websocket.close(code=4401, reason="Authentication required")
+        return
     await manager.connect(websocket)
     pipeline = PipecatVoicePipeline()
 

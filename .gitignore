@@ -20,6 +20,8 @@ dist/
 *.db-shm
 *.db-wal
 data/
+models/kokoro/*.onnx
+models/kokoro/*.bin
 
 # Scratch & Cache directories
 graphify-out/

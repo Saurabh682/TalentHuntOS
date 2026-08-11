@@ -36,6 +36,7 @@ def create_layout(main_content_fn, active_path: str = "/"):
                 nav_items = [
                     ('Dashboard', 'dashboard', '/'),
                     ('Hunts', 'travel_explore', '/hunts'),
+                    ('Discoveries', 'person_search', '/discoveries'),
                     ('Candidates', 'group', '/candidates'),
                     ('Pipeline', 'view_kanban', '/pipeline'),
                     ('Playbook', 'menu_book', '/playbook'),
@@ -54,11 +55,17 @@ def create_layout(main_content_fn, active_path: str = "/"):
                         ui.icon(icon, size='18px').style('color:inherit')
                         ui.label(label).style('font-size:13px;color:inherit')
 
-            with ui.element('div').classes('th-engine').style(
-                'display:flex;align-items:center;justify-content:space-between;width:100%'
-            ):
-                ui.label('AI Engine').style('font-size:11px;color:#8296a7')
-                ui.label('● Local Ready').style('font-size:11px;color:#19d3c5;font-weight:600')
+            with ui.column().classes('w-full gap-2'):
+                with ui.element('div').classes('th-engine').style(
+                    'display:flex;align-items:center;justify-content:space-between;width:100%'
+                ):
+                    ui.label('AI Engine').style('font-size:11px;color:#8296a7')
+                    ui.label('● Local Ready').style('font-size:11px;color:#19d3c5;font-weight:600')
+                ui.button(
+                    'Sign out',
+                    icon='logout',
+                    on_click=lambda: ui.run_javascript("window.location.href='/auth/logout'"),
+                ).props('flat dense no-caps').classes('w-full text-xs text-slate-400')
 
         # Panel 2: Center Main Content
         with ui.element('main').classes('th-main'):
@@ -66,8 +73,32 @@ def create_layout(main_content_fn, active_path: str = "/"):
 
         # Panel 3: Right Copilot
         with ui.element('aside').classes('th-copilot-panel').style(
-            'width:285px;padding:16px;background:#08121d;'
+            'width:320px;padding:16px;background:#08121d;'
             'border-left:1px solid #1b3040;display:flex;flex-direction:column;'
             'overflow:hidden;flex-shrink:0;'
         ):
             render_copilot_panel()
+
+        with ui.element('nav').classes('th-mobile-nav'):
+            mobile_items = [
+                ('dashboard', '/', 'Dashboard'),
+                ('travel_explore', '/hunts', 'Hunts'),
+                ('person_search', '/discoveries', 'Discoveries'),
+                ('group', '/candidates', 'Candidates'),
+                ('view_kanban', '/pipeline', 'Pipeline'),
+                ('menu_book', '/playbook', 'Playbook'),
+                ('forum', '/communications', 'Communications'),
+                ('insights', '/analytics', 'Analytics'),
+                ('settings', '/settings', 'Settings'),
+            ]
+            for icon, path, label in mobile_items:
+                ui.button(
+                    icon=icon,
+                    on_click=lambda p=path: ui.navigate.to(p),
+                ).props('flat round dense').tooltip(label)
+            ui.button(
+                icon='smart_toy',
+                on_click=lambda: ui.run_javascript(
+                    "document.querySelector('.th-copilot-panel')?.classList.toggle('th-mobile-open')"
+                ),
+            ).props('flat round dense').classes('text-[#19d3c5]').tooltip('Copilot')

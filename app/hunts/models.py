@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db import Base
-import app.candidates.models  # noqa: F401 - Register Candidate for ORM relationship
+from app.candidates.models import Candidate
 
 
 class TalentHunt(Base):

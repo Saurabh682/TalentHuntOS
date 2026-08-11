@@ -9,13 +9,23 @@ def render_browser_panel(initial_url: str = "https://www.linkedin.com"):
     current_url = {"value": initial_url}
 
     with ui.column().classes('w-full gap-4'):
+        with ui.card().classes('w-full p-4 th-card border border-teal-900/30 gap-2'):
+            with ui.row().classes('items-center gap-2 mb-1'):
+                ui.icon('verified_user', color='teal-4', size='sm')
+                ui.label('Site logins (for search & snapshots)').classes('text-sm font-bold text-slate-100')
+            ui.label(
+                'Connect once so Playwright can open profiles while logged in. Cookies stay encrypted on this PC.'
+            ).classes('text-[11px] text-slate-500 mb-2')
+            from app.ui.components.connect_sites import render_connect_sites_panel
+            render_connect_sites_panel(compact=True)
+
         # Header Controls & Address Bar
         with ui.card().classes('w-full p-4 th-card border border-teal-900/30 gap-3'):
             with ui.row().classes('w-full items-center justify-between flex-wrap gap-2'):
                 with ui.row().classes('items-center gap-2'):
                     ui.icon('language', color='teal-4', size='sm')
                     ui.label('Embedded Sourcing Browser').classes('text-base font-bold text-slate-100')
-                    ui.badge('Active Session', color='teal').classes('text-[10px]')
+                    ui.badge('Preview', color='blue-grey').classes('text-[10px]')
 
                 # Quick Bookmark Buttons
                 with ui.row().classes('items-center gap-1.5 flex-wrap'):

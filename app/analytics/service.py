@@ -6,6 +6,7 @@ candidate match quality, outreach performance, AI cost tracking, and trend analy
 
 import json
 import logging
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 
@@ -43,6 +44,29 @@ DEFAULT_FUNNEL_STAGES: List[str] = [
     "Hired",
 ]
 
+AI_ACTIVITY_LABELS: Dict[str, str] = {
+    "autopilot_match": "Candidate Match Scoring",
+    "candidate_profile_enriched": "Profile Enrichment",
+    "profile_enriched": "Profile Enrichment",
+    "sourcing_completed": "Multi-Platform Talent Search",
+    "talent_search": "Multi-Platform Talent Search",
+    "outreach_drafted": "Outreach Drafting",
+    "voice_screened": "Voice AI Screening",
+}
+
+
+def _recorded_ai_activities(activities: List[HuntActivity]) -> List[HuntActivity]:
+    """Return only activity rows that explicitly represent an AI operation."""
+    return [activity for activity in activities if activity.activity_type in AI_ACTIVITY_LABELS]
+
+
+def _percent_score(value: Optional[float]) -> Optional[float]:
+    """Normalize legacy 0..1 and current 0..100 match-score formats."""
+    if value is None:
+        return None
+    score = float(value)
+    return score * 100 if 0 <= score <= 1 else score
+
 
 def get_kpi_summary(db: Session, hunt_id: Optional[int] = None) -> Dict[str, Any]:
     """Calculate executive KPI overview metrics.
@@ -66,15 +90,15 @@ def get_kpi_summary(db: Session, hunt_id: Optional[int] = None) -> Dict[str, Any
         completed_hunts = len([h for h in hunts if h.status in ["Completed", "Closed"]])
 
         # Candidates in hunts query
-        cand_stmt = select(HuntCandidate)
-        if hunt_id:
-            cand_stmt = cand_stmt.where(HuntCandidate.hunt_id == hunt_id)
-        hunt_cands = list(db.scalars(cand_stmt).all())
+        from app.hunts.pipeline import list_active_hunt_candidates
+
+        hunt_cands = list_active_hunt_candidates(db, hunt_id)
 
         # Global candidate count fallback if no hunt_id
         if not hunt_id:
-            total_global_cands = db.scalar(select(func.count(Candidate.id))) or 0
-            total_sourced = max(len(hunt_cands), total_global_cands)
+            total_sourced = db.scalar(
+                select(func.count(Candidate.id)).where(Candidate.status != "Archived")
+            ) or 0
         else:
             total_sourced = len(hunt_cands)
 
@@ -106,14 +130,12 @@ def get_kpi_summary(db: Session, hunt_id: Optional[int] = None) -> Dict[str, Any
         if hunt_id:
             activities_stmt = activities_stmt.where(HuntActivity.hunt_id == hunt_id)
         activities = list(db.scalars(activities_stmt).all())
-        ai_actions = len(activities)
+        ai_actions = len(_recorded_ai_activities(activities))
 
-        # Cost computation estimates
-        cloud_cost_est = round(ai_actions * 0.015 + (total_sourced * 0.05), 2)
-        local_ai_cost = 0.0
-        net_cost_saved = round(cloud_cost_est - local_ai_cost, 2)
-
-        # Fallback removed - strictly use actual database metrics.
+        # Provider token/cost telemetry is not persisted yet, so reporting a cost
+        # estimate here would manufacture data. Keep these values explicitly zero.
+        cloud_cost_est = 0.0
+        net_cost_saved = 0.0
 
         return {
             "total_hunts": total_hunts,
@@ -150,10 +172,9 @@ def get_hunt_funnel_data(db: Session, hunt_id: Optional[int] = None) -> Dict[str
         Dict[str, Any]: A dictionary containing the talent sourcing funnel metrics.
     """
     try:
-        cand_stmt = select(HuntCandidate)
-        if hunt_id:
-            cand_stmt = cand_stmt.where(HuntCandidate.hunt_id == hunt_id)
-        hunt_cands = list(db.scalars(cand_stmt).all())
+        from app.hunts.pipeline import list_active_hunt_candidates
+
+        hunt_cands = list_active_hunt_candidates(db, hunt_id)
 
         # Map candidate counts by stage name
         stage_counts: Dict[str, int] = {stage: 0 for stage in DEFAULT_FUNNEL_STAGES}
@@ -168,7 +189,7 @@ def get_hunt_funnel_data(db: Session, hunt_id: Optional[int] = None) -> Dict[str
 
         # Fallback mock distribution removed
 
-        total_initial = max(1, sum(stage_counts.values()))
+        total_initial = sum(stage_counts.values())
         funnel_stages: List[Dict[str, Any]] = []
         prev_count = total_initial
 
@@ -217,8 +238,12 @@ def get_time_to_fill_metrics(db: Session, hunt_id: Optional[int] = None) -> Dict
 
         hunt_velocity_list: List[Dict[str, Any]] = []
         for h in hunts:
-            cands_count = len(h.candidates)
-            hired_count = len([c for c in h.candidates if c.stage and c.stage.name == "Hired"])
+            from app.hunts.pipeline import list_active_hunt_candidates
+
+            active_candidates = list_active_hunt_candidates(db, h.id)
+            cands_count = len(active_candidates)
+            hired = [c for c in active_candidates if c.stage and c.stage.name == "Hired"]
+            hired_count = len(hired)
             
             # Calculate days open
             created_dt = h.created_at
@@ -227,7 +252,20 @@ def get_time_to_fill_metrics(db: Session, hunt_id: Optional[int] = None) -> Dict
                 days_open = max(1, (now_dt - created_dt).days)
             else:
                 days_open = 1
-            time_to_fill = days_open if h.status in ["Completed", "Closed"] or hired_count > 0 else None
+            fill_dates = [candidate.updated_at for candidate in hired if candidate.updated_at]
+            if fill_dates and created_dt:
+                normalized_created = (
+                    created_dt.replace(tzinfo=timezone.utc)
+                    if created_dt.tzinfo is None
+                    else created_dt
+                )
+                normalized_fills = [
+                    value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+                    for value in fill_dates
+                ]
+                time_to_fill = max(0, (min(normalized_fills) - normalized_created).days)
+            else:
+                time_to_fill = None
 
             hunt_velocity_list.append({
                 "hunt_id": h.id,
@@ -237,21 +275,22 @@ def get_time_to_fill_metrics(db: Session, hunt_id: Optional[int] = None) -> Dict
                 "total_candidates": cands_count,
                 "hired_count": hired_count,
                 "days_open": days_open,
-                "time_to_fill_days": time_to_fill or days_open,
+                "time_to_fill_days": time_to_fill,
             })
 
-        # Stage average days breakdown (Bottleneck analysis)
-        stage_durations: Dict[str, float] = {
-            "Sourced": 2.5,
-            "Contacted": 3.0,
-            "Screening": 4.5,
-            "Interview": 6.0,
-            "Offer": 2.5,
-        }
-
-        pass # Fallback velocity list removed
-
-        avg_ttf = round(sum(item["time_to_fill_days"] for item in hunt_velocity_list) / len(hunt_velocity_list), 1) if hunt_velocity_list else 0.0
+        # Stage-entry timestamps are not stored, so bottleneck durations cannot be
+        # computed honestly yet.
+        stage_durations: Dict[str, float] = {}
+        completed_durations = [
+            item["time_to_fill_days"]
+            for item in hunt_velocity_list
+            if item["time_to_fill_days"] is not None
+        ]
+        avg_ttf = (
+            round(sum(completed_durations) / len(completed_durations), 1)
+            if completed_durations
+            else 0.0
+        )
 
         return {
             "overall_avg_time_to_fill": avg_ttf,
@@ -277,20 +316,23 @@ def get_sourcing_quality_metrics(db: Session, hunt_id: Optional[int] = None) -> 
         Dict[str, Any]: A dictionary containing metrics related to sourcing quality.
     """
     try:
-        cand_stmt = select(HuntCandidate)
-        if hunt_id:
-            cand_stmt = cand_stmt.where(HuntCandidate.hunt_id == hunt_id)
-        cands = list(db.scalars(cand_stmt).all())
+        from app.hunts.pipeline import list_active_hunt_candidates
+
+        cands = list_active_hunt_candidates(db, hunt_id)
 
         score_brackets: Dict[str, int] = {
             "90-100% (High Match)": 0,
             "80-89% (Good Match)": 0,
             "70-79% (Moderate Match)": 0,
             "< 70% (Low Match)": 0,
+            "Unscored": 0,
         }
 
         for c in cands:
-            score = c.match_score if c.match_score is not None else 75.0
+            score = _percent_score(c.match_score)
+            if score is None:
+                score_brackets["Unscored"] += 1
+                continue
             if score >= 90:
                 score_brackets["90-100% (High Match)"] += 1
             elif score >= 80:
@@ -300,24 +342,34 @@ def get_sourcing_quality_metrics(db: Session, hunt_id: Optional[int] = None) -> 
             else:
                 score_brackets["< 70% (Low Match)"] += 1
 
-        # Fallback demo distribution removed
-
         # Sourcing channels breakdown
-        channels_breakdown: Dict[str, int] = {
-            "LinkedIn Outreach": 22,
-            "GitHub Sourcing": 12,
-            "Naukri Talent Portal": 9,
-            "Resume Upload & RAG": 5,
-        }
+        channels_breakdown: Dict[str, int] = {}
+        for candidate in cands:
+            source = (candidate.source_platform or "Internal DB").strip().title()
+            channels_breakdown[source] = channels_breakdown.get(source, 0) + 1
 
-        # Top Candidate Skills breakdown
-        top_skills: List[Dict[str, Any]] = [
-            {"skill": "Python / FastAPI", "count": 38},
-            {"skill": "React / Next.js", "count": 29},
-            {"skill": "PyTorch / LLMs", "count": 24},
-            {"skill": "Docker / Kubernetes", "count": 22},
-            {"skill": "SQL / PostgreSQL", "count": 31},
-            {"skill": "System Architecture", "count": 18},
+        skill_counts: Counter[str] = Counter()
+        candidate_ids = {candidate.candidate_id for candidate in cands if candidate.candidate_id}
+        if candidate_ids:
+            profiles = db.scalars(
+                select(CandidateProfile).where(CandidateProfile.candidate_id.in_(candidate_ids))
+            ).all()
+            for profile in profiles:
+                if not profile.skills_json:
+                    continue
+                try:
+                    skills = json.loads(profile.skills_json)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if not isinstance(skills, list):
+                    continue
+                for skill in skills:
+                    clean = str(skill).strip()
+                    if clean:
+                        skill_counts[clean] += 1
+        top_skills = [
+            {"skill": skill, "count": count}
+            for skill, count in skill_counts.most_common(10)
         ]
 
         return {
@@ -429,41 +481,30 @@ def get_ai_cost_tracker(db: Session) -> Dict[str, Any]:
         activities_stmt = select(HuntActivity)
         activities = list(db.scalars(activities_stmt).all())
         
-        total_ai_ops = max(len(activities), 142)
+        ai_activities = _recorded_ai_activities(activities)
+        total_ai_ops = len(ai_activities)
+        op_breakdown: Counter[str] = Counter(
+            AI_ACTIVITY_LABELS[activity.activity_type] for activity in ai_activities
+        )
 
-        # Activity type breakdown
-        op_breakdown: Dict[str, int] = {
-            "JD Parsing & Hunt Generation": 18,
-            "Multi-Platform Resume Search": 45,
-            "Candidate Match Scoring": 48,
-            "Outreach Email/Message Drafts": 22,
-            "Voice AI Candidate Screening": 9,
-        }
-
-        # Model Usage breakdown & cost computation
-        local_ops_count = int(total_ai_ops * 0.65)  # 65% handled by Local Edge AI!
-        cloud_ops_count = total_ai_ops - local_ops_count
-
-        estimated_local_tokens = local_ops_count * 1500
-        estimated_cloud_tokens = cloud_ops_count * 1500
-
-        # Cost computation estimates
-        hypothetical_cloud_cost = round((total_ai_ops * 1500 / 1_000_000) * 15.00 + (9 * 0.25), 2)
-        actual_cloud_cost = round((cloud_ops_count * 1500 / 1_000_000) * 1.50 + (9 * 0.05), 2)
-        local_execution_cost = 0.00
-        net_savings = round(hypothetical_cloud_cost - actual_cloud_cost, 2)
+        # Hunt activities currently do not persist provider, token, or billing
+        # telemetry. Expose that absence instead of assuming a local/cloud split.
+        local_ops_count = 0
+        cloud_ops_count = 0
+        unattributed_ops_count = total_ai_ops
 
         return {
             "total_operations": total_ai_ops,
             "local_operations": local_ops_count,
             "cloud_operations": cloud_ops_count,
-            "local_tokens_processed": estimated_local_tokens,
-            "cloud_tokens_processed": estimated_cloud_tokens,
-            "hypothetical_full_cloud_cost": hypothetical_cloud_cost,
-            "actual_cloud_cost": actual_cloud_cost,
-            "local_execution_cost": local_execution_cost,
-            "total_cost_saved": net_savings,
-            "operation_breakdown": op_breakdown,
+            "unattributed_operations": unattributed_ops_count,
+            "local_tokens_processed": 0,
+            "cloud_tokens_processed": 0,
+            "hypothetical_full_cloud_cost": 0.0,
+            "actual_cloud_cost": 0.0,
+            "local_execution_cost": 0.0,
+            "total_cost_saved": 0.0,
+            "operation_breakdown": dict(op_breakdown),
         }
     except SQLAlchemyError as e:
         logger.error(f"Database error in get_ai_cost_tracker: {e}", exc_info=True)
@@ -473,7 +514,11 @@ def get_ai_cost_tracker(db: Session) -> Dict[str, Any]:
         return {}
 
 
-def get_trend_analytics(db: Session, days: int = 30) -> Dict[str, Any]:
+def get_trend_analytics(
+    db: Session,
+    days: int = 30,
+    hunt_id: Optional[int] = None,
+) -> Dict[str, Any]:
     """Generate time-series daily trend data for charts.
 
     Args:
@@ -487,24 +532,57 @@ def get_trend_analytics(db: Session, days: int = 30) -> Dict[str, Any]:
         end_date = datetime.now(timezone.utc).date()
         start_date = end_date - timedelta(days=days - 1)
 
+        if hunt_id:
+            from app.hunts.pipeline import list_active_hunt_candidates
+
+            hunt_candidates = list_active_hunt_candidates(db, hunt_id)
+            sourced_dates = [item.created_at for item in hunt_candidates]
+            candidate_ids = {item.candidate_id for item in hunt_candidates if item.candidate_id}
+            hired_dates = [
+                item.updated_at
+                for item in hunt_candidates
+                if item.stage and item.stage.name == "Hired"
+            ]
+            communications = (
+                list(db.scalars(select(Communication).where(Communication.candidate_id.in_(candidate_ids))).all())
+                if candidate_ids
+                else []
+            )
+        else:
+            sourced_dates = list(db.scalars(
+                select(Candidate.created_at).where(Candidate.status != "Archived")
+            ).all())
+            from app.hunts.pipeline import list_active_hunt_candidates
+
+            active_hunt_candidates = list_active_hunt_candidates(db)
+            hired_dates = [
+                item.updated_at
+                for item in active_hunt_candidates
+                if item.stage and item.stage.name == "Hired"
+            ]
+            communications = list(db.scalars(select(Communication)).all())
+
+        sourced_by_day = Counter(value.date() for value in sourced_dates if value)
+        outreach_by_day = Counter(
+            item.created_at.date()
+            for item in communications
+            if item.direction == "outbound" and item.created_at
+        )
+        hired_by_day = Counter(value.date() for value in hired_dates if value)
+
         date_labels: List[str] = []
         candidates_sourced_series: List[int] = []
         outreach_sent_series: List[int] = []
         hires_series: List[int] = []
-
-        # Generate dates list
         curr = start_date
-        import random
-        random.seed(42)  # Deterministic seed for smooth realistic trend lines
 
         while curr <= end_date:
             date_str = curr.strftime("%b %d")
             date_labels.append(date_str)
             
-            # Zero out mock trend curves
-            candidates_sourced_series.append(0)
-            outreach_sent_series.append(0)
-            hires_series.append(0)
+            candidates_sourced_series.append(sourced_by_day.get(curr, 0))
+            outreach_sent_series.append(outreach_by_day.get(curr, 0))
+            hires_series.append(hired_by_day.get(curr, 0))
 
             curr += timedelta(days=1)
 
@@ -537,7 +615,7 @@ def get_all_analytics_data(db: Session, hunt_id: Optional[int] = None, days: int
         "sourcing": get_sourcing_quality_metrics(db, hunt_id=hunt_id),
         "outreach": get_outreach_analytics(db, hunt_id=hunt_id),
         "ai_cost": get_ai_cost_tracker(db),
-        "trends": get_trend_analytics(db, days=days),
+        "trends": get_trend_analytics(db, days=days, hunt_id=hunt_id),
     }
 
 
@@ -555,7 +633,6 @@ def _calculate_avg_time_to_fill(hunts: List[TalentHunt], hunt_cands: List[HuntCa
         if not hunts:
             return 0.0
 
-        now = datetime.now(timezone.utc)
         durations: List[float] = []
         for h in hunts:
             hired = [c for c in hunt_cands if c.hunt_id == h.id and c.stage and c.stage.name == "Hired"]
@@ -568,10 +645,6 @@ def _calculate_avg_time_to_fill(hunts: List[TalentHunt], hunt_cands: List[HuntCa
                         c_updated = candidate.updated_at.replace(tzinfo=timezone.utc) if candidate.updated_at.tzinfo is None else candidate.updated_at
                         days = max(1, (c_updated - h_created).days)
                         durations.append(float(days))
-            else:
-                days = max(1, (now - h_created).days)
-                durations.append(float(days))
-
         return round(sum(durations) / len(durations), 1) if durations else 0.0
     except Exception as e:
         logger.error(f"Unexpected error in _calculate_avg_time_to_fill: {e}", exc_info=True)

@@ -28,6 +28,8 @@ dependencies = [
     "pipecat-ai>=0.1",
     "deepgram-sdk>=3.0",
     "elevenlabs>=1.0",
+    "edge-tts>=6.1",
+    "kokoro-onnx>=0.5,<0.6",
     
     # Discovery
     "scrapegraphai",
@@ -58,7 +60,15 @@ dependencies = [
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[project.scripts]
+talenthunt-reset-password = "app.infrastructure.password_recovery:main"
+
 [tool.setuptools.packages.find]
 where = ['.']
 include = ['app*']
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["scratch", "output", "graphify-out", ".git"]
+cache_dir = "output/.pytest_cache"
+addopts = "--basetemp=output/pytest-temp"

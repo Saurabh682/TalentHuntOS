@@ -1,11 +1,10 @@
 """NiceGUI Talent Hunts Campaign Management Page."""
 
 from nicegui import ui
+from app.actions.api import approve_and_dispatch, cancel_approval, dispatch_action, dispatch_preview
 from app.ui.layout import create_layout
 from app.infrastructure.db import SessionFactory, init_db
-from app.hunts.service import create_hunt, list_hunts, get_hunt, get_hunt_metrics, update_hunt, delete_hunt
-from app.hunts.experience import parse_experience_range
-from app.hunts.models import HuntSearchConfig
+from app.hunts.service import list_hunts, get_hunt, get_hunt_metrics
 
 
 def seed_demo_hunts_if_empty(db):
@@ -54,10 +53,10 @@ def _hunt_form_fields(
                 placeholder='e.g., 4–8 years',
             ).classes('w-full').props('dark outlined dense')
         with ui.column().classes('grow gap-1'):
-            ui.label('Salary Range').classes('th-caption')
+            ui.label('Salary Range (optional)').classes('th-caption')
             salary_in = ui.input(
                 value=salary,
-                placeholder='e.g., ₹15–25 LPA',
+                placeholder='e.g., ₹15–25 LPA — leave blank if unknown',
             ).classes('w-full').props('dark outlined dense')
 
     with ui.row().classes('w-full gap-3'):
@@ -226,9 +225,11 @@ def render_hunts():
                             ui.separator().classes('bg-[#1b3040] my-3')
 
                             with ui.row().classes('w-full justify-around items-center bg-[#091520] p-2.5 rounded-lg border border-[#1b3040] mb-4'):
-                                with ui.column().classes('items-center gap-0 cursor-pointer hover:opacity-80 transition-opacity').on('click', lambda e: ui.navigate.to('/candidates')):
+                                with ui.column().classes('items-center gap-0 cursor-pointer hover:opacity-80 transition-opacity').on(
+                                    'click', lambda e, hid=hunt.id: ui.navigate.to(f'/hunts/{hid}/pipeline')
+                                ):
                                     ui.label(str(metrics.get("total_candidates", 0))).classes('text-lg font-bold text-[#19d3c5]')
-                                    ui.label('Candidates').classes('text-[10px] text-[#8195a5]')
+                                    ui.label('In pipeline').classes('text-[10px] text-[#8195a5]')
                                 
                                 ui.separator().props('vertical').classes('h-8 bg-[#1b3040]')
 
@@ -253,13 +254,13 @@ def render_hunts():
                                 with ui.row().classes('w-full justify-between items-center px-1 pt-1'):
                                     ui.button(
                                         icon='edit',
-                                        on_click=lambda e, h=hunt: open_edit_hunt_dialog(h)
+                                        on_click=lambda e, hid=hunt.id: open_edit_hunt_dialog(hid)
                                     ).props('flat round dense').classes('text-[#8195a5] hover:text-[#19d3c5]').tooltip('Edit Campaign')
 
                                     ui.button(
                                         icon='auto_awesome',
                                         on_click=lambda e, hid=hunt.id, t=hunt.title: trigger_ai_sourcing(hid, t)
-                                    ).props('flat round dense').classes('text-[#8195a5] hover:text-[#19d3c5]').tooltip('AI Auto-Pilot Sourcing')
+                                    ).props('flat round dense').classes('text-[#8195a5] hover:text-[#19d3c5]').tooltip('Source until 25 in pipeline')
 
                                     toggle_icon = 'pause' if hunt.status == 'Active' else 'play_arrow'
                                     ui.button(
@@ -270,7 +271,7 @@ def render_hunts():
                                     ui.button(
                                         icon='delete_outline',
                                         on_click=lambda e, hid=hunt.id, t=hunt.title: confirm_delete_hunt(hid, t)
-                                    ).props('flat round dense').classes('text-[#8195a5] hover:text-red-400').tooltip('Delete Talent Hunt')
+                                    ).props('flat round dense').classes('text-[#8195a5] hover:text-red-400').tooltip('Archive Talent Hunt')
 
         render_grid_ref["fn"] = render_grid
 
@@ -279,66 +280,173 @@ def render_hunts():
             render_grid()
 
         def trigger_ai_sourcing(hunt_id: int, title: str):
+            """Find up to 25 lightweight profiles and send them to recruiter review."""
+            import threading
             try:
-                from app.intelligence.auto_pilot import run_autopilot_hunt_job
-                ui.notify(f"AI Auto-Pilot sourcing candidates for '{title}'...", type="info")
-                res = run_autopilot_hunt_job(hunt_id)
-                ui.notify(f"Sourcing finished: {res.get('candidates_sourced', 0)} candidates matched!", type="positive")
-                render_grid()
+                from app.infrastructure.db import SessionFactory
+                from app.hunts.service import get_hunt
+                from app.candidates.discovery import discovery_counts
+                from app.hunts.web_sourcing import source_candidates_for_hunt
+                from app.hunts import sourcing_jobs
+
+                with SessionFactory() as db:
+                    hunt = get_hunt(db, hunt_id)
+                    if not hunt:
+                        ui.notify("Hunt not found", type="negative")
+                        return
+                    have = discovery_counts(db, hunt_id=hunt_id).get("reviewable", 0)
+                    fill_to = 25
+                    need = max(0, fill_to - have)
+                    role = (hunt.target_role or hunt.title or "Professional").strip()
+                    loc = (hunt.location or "India").strip() or "India"
+                    skills = ""
+                    if hunt.search_config and hunt.search_config.required_skills:
+                        skills = hunt.search_config.required_skills
+
+                if need == 0:
+                    ui.notify(f"'{title}' already has {have} profiles awaiting review.", type="info")
+                    render_grid()
+                    return
+
+                job_id = sourcing_jobs.start_job(
+                    hunt_id=hunt_id,
+                    hunt_title=title,
+                    label=f"Find {fill_to} · {role}",
+                    payload={
+                        "role": role,
+                        "skills": skills,
+                        "location": loc,
+                        "target_count": fill_to,
+                        "platforms": [],
+                        "approval_required": True,
+                        "time_budget_sec": 180,
+                    },
+                )
+                ui.notify(
+                    f"Searching for '{title}' - review queue {have}/{fill_to}. "
+                    "You can keep chatting while it runs.",
+                    type="info",
+                )
+
+                def _bg():
+                    try:
+                        source_candidates_for_hunt(
+                            hunt_id,
+                            role=role,
+                            skills=skills,
+                            location=loc,
+                            hunt_title=title,
+                            max_per_query=10,
+                            enrich_pages=True,
+                            verify_with_ai=False,
+                            job_id=job_id,
+                            target_added=fill_to,
+                            approval_required=True,
+                            time_budget_sec=180,
+                        )
+                    except Exception as exc:
+                        sourcing_jobs.finish_job(
+                            job_id, status="error", message=str(exc), error=str(exc)
+                        )
+
+                threading.Thread(target=_bg, daemon=True, name=f"hunt-source-{hunt_id}").start()
+                # Refresh soon so banner/job state is visible; user can refresh again later
+                ui.timer(2.0, render_grid, once=True)
             except Exception as e:
-                ui.notify(f"Auto-pilot error: {e}", type="negative")
+                ui.notify(f"Sourcing error: {e}", type="negative")
 
         def toggle_hunt_status(hunt_id, current_status):
             try:
                 new_st = 'Paused' if current_status == 'Active' else 'Active'
-                with SessionFactory() as db:
-                    update_hunt(db, hunt_id, status=new_st)
-                ui.notify(f"Hunt status updated to {new_st}")
+                result = dispatch_action(
+                    'hunts.status.set',
+                    {'hunt_id': hunt_id, 'status': new_st},
+                    actor_type='ui',
+                    session_id=f'hunt_{hunt_id}',
+                )
+                if not result.success:
+                    raise RuntimeError(result.error or 'Status update failed.')
+                ui.notify(f"Hunt status updated to {new_st}. Undo is available.")
                 render_grid()
             except Exception as e:
                 ui.notify(f"Error: {e}", type="negative")
 
         def confirm_delete_hunt(hunt_id: int, title: str):
+            approval_session = f"hunt_archive_{hunt_id}"
+            requested = dispatch_preview(
+                "hunts.archive",
+                {"hunt_id": hunt_id},
+                actor_type="ui",
+                session_id=approval_session,
+            )
+            if not requested.success:
+                ui.notify(requested.error or "Could not create archive preview.", type="negative")
+                return
+            pending = requested.data or {}
+            preview = pending.get("preview") or {}
             with ui.dialog() as dialog, ui.card().classes('p-6 th-card border border-red-500/30 gap-4'):
-                ui.label(f'Delete Campaign "{title}"?').classes('th-subheading text-slate-100')
-                ui.label('This will permanently delete this Talent Hunt campaign, pipeline stages, and candidate enrollments.').classes('th-body text-slate-400')
+                ui.label(f'Archive Campaign "{title}"?').classes('th-subheading text-slate-100')
+                ui.label(preview.get("summary") or 'The campaign will leave active views.').classes('th-body text-slate-300')
+                ui.label(
+                    f'{preview.get("pipeline_candidates", 0)} pipeline enrollment(s) are affected. '
+                    'The campaign can be restored from Action History for seven days.'
+                ).classes('text-xs text-slate-400')
                 with ui.row().classes('w-full justify-end gap-3'):
-                    ui.button('Cancel', on_click=dialog.close).props('flat').classes('text-slate-400')
+                    def cancel_archive():
+                        cancel_approval(
+                            int(pending["approval_id"]),
+                            session_id=approval_session,
+                        )
+                        dialog.close()
+
+                    ui.button('Cancel', on_click=cancel_archive).props('flat').classes('text-slate-400')
                     def do_del():
                         try:
-                            with SessionFactory() as db:
-                                delete_hunt(db, hunt_id)
-                            ui.notify(f'Campaign "{title}" deleted.', type='info')
+                            result = approve_and_dispatch(
+                                int(pending["approval_id"]),
+                                session_id=approval_session,
+                                actor_type="ui",
+                            )
+                            if not result.success:
+                                raise RuntimeError(result.error or "Archive failed")
+                            ui.notify(f'Campaign "{title}" archived. Undo is available for seven days.', type='info')
                             dialog.close()
                             render_grid()
                         except Exception as e:
                             ui.notify(f"Error: {e}", type="negative")
-                    ui.button('Delete Campaign', color='red', on_click=do_del).classes('bg-red-600 text-white text-xs px-4 py-2 rounded')
+                    ui.button('Archive Campaign', color='red', on_click=do_del).classes('bg-red-600 text-white text-xs px-4 py-2 rounded')
             dialog.open()
 
-        def open_edit_hunt_dialog(hunt):
-            # Reload so we show current fields (same set as Create)
-            with SessionFactory() as db:
-                fresh = get_hunt(db, hunt.id) or hunt
-                title0 = fresh.title or ""
-                role0 = fresh.target_role or ""
-                loc0 = fresh.location or ""
-                salary0 = fresh.salary_range or ""
-                desc0 = fresh.description or ""
-                sc = fresh.search_config
-                skills0 = (sc.required_skills if sc and sc.required_skills else "") or ""
-                industry0 = (sc.industry if sc and sc.industry else "") or ""
-                exp0 = ""
-                if sc:
-                    emin = sc.experience_years_min
-                    emax = sc.experience_years_max
-                    if emin is not None and emax is not None:
-                        exp0 = f"{emin}-{emax}" if emin != emax else str(emin)
-                    elif emin is not None:
-                        exp0 = f"{emin}+"
-                    elif emax is not None:
-                        exp0 = f"0-{emax}"
-                hunt_id = fresh.id
+        def open_edit_hunt_dialog(hunt_id: int):
+            """Open edit dialog by hunt id (never pass a detached ORM row from the grid)."""
+            try:
+                with SessionFactory() as db:
+                    fresh = get_hunt(db, int(hunt_id))
+                    if not fresh:
+                        ui.notify('Hunt not found', type='negative')
+                        return
+                    title0 = fresh.title or ""
+                    role0 = fresh.target_role or ""
+                    loc0 = fresh.location or ""
+                    salary0 = fresh.salary_range or ""
+                    desc0 = fresh.description or ""
+                    sc = fresh.search_config
+                    skills0 = (sc.required_skills if sc and sc.required_skills else "") or ""
+                    industry0 = (sc.industry if sc and sc.industry else "") or ""
+                    exp0 = ""
+                    if sc:
+                        emin = sc.experience_years_min
+                        emax = sc.experience_years_max
+                        if emin is not None and emax is not None:
+                            exp0 = f"{emin}-{emax}" if emin != emax else str(emin)
+                        elif emin is not None:
+                            exp0 = f"{emin}+"
+                        elif emax is not None:
+                            exp0 = f"0-{emax}"
+                    hid = fresh.id
+            except Exception as e:
+                ui.notify(f'Could not open editor: {e}', type='negative')
+                return
 
             with ui.dialog() as dialog, ui.card().classes('w-full max-w-2xl p-6 th-card gap-4'):
                 ui.label('Hunts / Edit').classes('th-ey')
@@ -365,35 +473,32 @@ def render_hunts():
                             return
 
                         try:
-                            emin, emax = parse_experience_range(exp_in.value)
                             skills_text = (skills_in.value or "").strip() or None
                             industry_text = (industry_in.value or "").strip() or None
                             salary_text = (salary_in.value or "").strip() or None
                             loc_text = (loc_in.value or "").strip() or None
                             desc_text = (desc_in.value or "").strip() or None
 
-                            with SessionFactory() as db:
-                                h = get_hunt(db, hunt_id)
-                                if h is None:
-                                    ui.notify('Hunt not found', type='negative')
-                                    return
-                                h.title = title_in.value.strip()
-                                h.target_role = (role_in.value or "").strip() or None
-                                h.location = loc_text
-                                h.salary_range = salary_text
-                                h.description = desc_text
-                                if not h.search_config:
-                                    h.search_config = HuntSearchConfig(hunt_id=h.id)
-                                    db.add(h.search_config)
-                                h.search_config.required_skills = skills_text
-                                h.search_config.industry = industry_text
-                                h.search_config.experience_years_min = emin
-                                h.search_config.experience_years_max = emax
-                                if loc_text:
-                                    h.search_config.locations = loc_text
-                                db.commit()
+                            result = dispatch_action(
+                                'hunts.update',
+                                {
+                                    'hunt_id': hid,
+                                    'title': title_in.value.strip(),
+                                    'target_role': (role_in.value or '').strip() or None,
+                                    'location': loc_text,
+                                    'salary_range': salary_text,
+                                    'description': desc_text,
+                                    'required_skills': skills_text,
+                                    'industry': industry_text,
+                                    'experience': (exp_in.value or '').strip() or None,
+                                },
+                                actor_type='ui',
+                                session_id=f'hunt_{hid}',
+                            )
+                            if not result.success:
+                                raise RuntimeError(result.error or 'Hunt update failed.')
 
-                            ui.notify('Talent Hunt updated!', type='positive')
+                            ui.notify('Talent Hunt updated. Undo is available.', type='positive')
                             dialog.close()
                             render_grid()
                         except Exception as e:

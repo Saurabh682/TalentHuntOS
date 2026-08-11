@@ -1,0 +1,73 @@
+10:39:38 | INFO    | talenthunt.voice.tts_api | Registered free TTS routes at /api/tts
+Starting TalentHunt OS v0.1.0 on http://127.0.0.1:8080
+NiceGUI ready to go on http://127.0.0.1:8080
+10:39:39 | INFO    | talenthunt.voice.tts_api | Kokoro TTS engine warmed and ready
+10:43:18 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] start hunt=7 role='Spine Animator' fill_to=25 already=1 need=24 queries=26 max_scan=144 job=5e5e39bee7
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q1/26: "Spine Animator" Spine 7+ years Noida, India site:linkedin.com/in
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 15 hits
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Anas Khan years=6.2 band=7-None title=Spine Animator
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Shiq muthahar Ahmed years=2.5 band=7-None title=Sr. Spine Animator
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Guneet Singh loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Gowthaman Chandran loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Endra Andoyo loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Shobhit Verma loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Yash Pathania loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Chaofan Liu loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Yaroslav Sopot loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Shubham Kashyap years=None band=7-None title=Spine Animator
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Natallia Horbik years=1.8 band=7-None title=Spine Animator
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Katya Yoch loc=Poland reason=linkedin_host:Poland want=Noida, India
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q2/26: "Spine Animator" Spine 7+ years Noida, India site:naukri.com
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 11 hits
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q3/26: "Spine Animator" Spine Noida, India site:github.com
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 15 hits
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q4/26: "Spine Animator" Spine Noida, India site:behance.net
+10:43:31 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 6 hits
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Vinod Kumar years=None band=7-None title=Vinod Kumar - Senior Spine Animator and 2d artist in New Del
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Vikalp Bhandari years=None band=7-None title=Game artist, Illustrator, Spine Animator in Noida...
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Suman Raul years=None band=7-None title=Suman Raul - spine animator ,2d animator in Kolkata, India :
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Suman Raul years=5.0 band=7-None title=Suman Raul - spine animator ,2d animator in Kolkata, India :
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q5/26: "Spine Animator" Spine Noida, India site:artstation.com
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 6 hits
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q6/26: "Spine Animator" Spine Noida, India site:dribbble.com
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 10 hits
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Ramakant Dubey loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Peter Suslik loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q7/26: Spine Animator 7+ years Noida, India site:in.linkedin.com/in
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 13 hits
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Itisha Knox years=1.8 band=7-None title=Spine 2D Animator
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Vikas Kothiyal years=None band=7-None title=Senior Spine Game Animator
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Rahul Singh Negi years=None band=7-None title=Game Animator
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Himanshu Rawat years=None band=7-None title=Booming Games
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Suman Raul years=5.0 band=7-None title=spine animator ,2d animator at shivia...
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Rinika Pramanik years=None band=7-None title=RNGplay
+10:43:32 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Abhishek Saha years=None band=7-None title=Scopely
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Niharika Elena Knox years=None band=7-None title=Spine 2D Animator
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q8/26: "Spine Animator" Noida, India resume site:naukri.com
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 7 hits
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q9/26: "Spine Animator" Noida, India portfolio site:github.com
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 6 hits
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q10/26: "Spine Animator" Noida, India portfolio site:behance.net
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 11 hits
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Aditya Solanki loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Aman Naudiyal years=None band=7-None title=2D Spine animator in India :: Behance
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Akhil K.J years=None band=7-None title=2D spine animator, motion graphics artist in India
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Chetan Singh on Behance years=None band=7-None title=Chetan Singh on Behance
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q11/26: "Spine Animator" Noida, India portfolio site:artstation.com
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 13 hits
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q12/26: "Spine Animator" Noida, India designer site:dribbble.com
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 13 hits
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q13/26: "Spine Animator" Noida, India profile site:linkedin.com/in
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 13 hits
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Anton S. loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band AMAN HASAN years=None band=7-None title=Slot game animator
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Neha Bisht years=None band=7-None title=2d spine Animator
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Shivayya Adlimath loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip exp-band Sameerr W. years=None band=7-None title=Sr. Spine Animator Reliance Games
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location PT Traymany loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Ejaz Kiyani loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] skip location Pavel Mikhalev loc=None reason=unknown_location_for_india_hunt want=Noida, India
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] DDG r1 q14/26: Spine Animator 7+ years Noida, India profile site:naukri.com
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] query returned 6 hits
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] done hunt=7 status=partial added=4/24 pipeline_now=5/25 scanned=144
+10:43:33 | INFO    | talenthunt.hunts.web_sourcing | [sourcing] job=5e5e39bee7 finished in 15s

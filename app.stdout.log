@@ -1,0 +1,4 @@
+01:40:33 | INFO    | talenthunt.voice.tts_api | Registered free TTS routes at /api/tts
+Starting TalentHunt OS v0.1.0 on http://127.0.0.1:8080
+NiceGUI ready to go on http://127.0.0.1:8080
+01:40:38 | INFO    | talenthunt.voice.tts_api | Kokoro TTS engine warmed and ready

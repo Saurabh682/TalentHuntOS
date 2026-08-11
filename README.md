@@ -3,7 +3,7 @@
 # 🎯 TalentHunt OS
 ### *The Intelligent, AI-Native Workspace for Next-Generation Talent Acquisition*
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![NiceGUI](https://img.shields.io/badge/UI-NiceGUI%20%7C%20FastAPI-009688.svg?style=for-the-badge)](https://nicegui.io/)
 [![ChromaDB](https://img.shields.io/badge/Vector%20DB-ChromaDB-ff69b4.svg?style=for-the-badge)](https://www.trychroma.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
@@ -71,8 +71,9 @@ graph TD
 ## 🚀 Quick Start
 
 ### Prerequisites
-- **Python 3.10+** installed
+- **Python 3.12+** installed
 - Git
+- [uv](https://docs.astral.sh/uv/) for the locked project environment
 
 ### 1. Clone the Repository
 ```bash
@@ -80,17 +81,14 @@ git clone https://github.com/Saurabh682/TalentHuntOS.git
 cd TalentHuntOS
 ```
 
-### 2. Set Up Virtual Environment & Dependencies
-```bash
-# Create virtual environment
-python -m venv .venv
-
-# Activate environment (Windows PowerShell)
-.venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install -r requirements.txt
+### 2. Set Up the Locked Environment
+```powershell
+.\scripts\setup.ps1
 ```
+
+The setup command creates an isolated `.venv`, installs the exact dependency graph
+from `uv.lock`, and installs Playwright Chromium. It does not use or modify global
+Python packages.
 
 ### 3. Configure Environment Variables
 Create a `.env` file in the root directory:
@@ -109,8 +107,8 @@ PORT=8080
 ```
 
 ### 4. Launch TalentHunt OS
-```bash
-python -m app.main
+```powershell
+uv run python -m app.main
 ```
 Open your browser and navigate to **`http://127.0.0.1:8080`**.
 
@@ -118,9 +116,13 @@ Open your browser and navigate to **`http://127.0.0.1:8080`**.
 
 ## 🗺️ Roadmap & Vision
 
+The detailed control-plane audit and implementation sequence is maintained in
+[TalentHunt OS Copilot-First Roadmap](docs/COPILOT_FIRST_ROADMAP.md).
+
 - [x] **v0.1 Core Foundation**: Kanban pipeline, 360° candidate CRM, AI Auto-pilot, vector search, copilot chat persistence.
 - [ ] **Multi-Channel Web Sourcing Agent**: Autonomous sourcing across GitHub, LinkedIn, and public developer profiles.
-- [ ] **Email Sequence Engine**: Real SMTP/IMAP integration with dynamic drip templates and reply detection.
+- [x] **SMTP Outbound Delivery**: Encrypted local account configuration, connection testing, and honest send status.
+- [ ] **IMAP Inbox Sync**: Authenticated reply detection and inbox synchronization.
 - [ ] **Resume Parser**: PDF/Docx drag-and-drop parsing into structured candidate profiles.
 - [ ] **Team Collaboration**: Shared hunt workspaces and candidate evaluation rubrics.
 

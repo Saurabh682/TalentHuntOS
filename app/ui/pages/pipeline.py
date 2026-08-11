@@ -1,16 +1,13 @@
 """NiceGUI Kanban Board for Talent Hunt Candidate Pipeline with Drag-and-Drop."""
 
 from nicegui import ui
+from app.actions.api import dispatch_action
 from app.ui.layout import create_layout
 from app.infrastructure.db import SessionFactory, init_db
 from app.hunts.service import list_hunts
 from app.hunts.pipeline import (
     get_pipeline_data,
-    move_candidate_stage,
-    add_candidate_to_hunt,
-    remove_candidate,
 )
-from app.hunts.playbook import keep_hunt_candidate, pass_hunt_candidate
 
 
 def _playbook_author() -> str:
@@ -20,6 +17,38 @@ def _playbook_author() -> str:
         return "Recruiter"
 
 
+def _profile_link_meta(url: str | None) -> tuple[str, str] | None:
+    """Return (label, icon) for an external profile URL, or None if empty."""
+    u = (url or "").strip()
+    if not u:
+        return None
+    low = u.lower()
+    if "linkedin.com" in low:
+        return ("LinkedIn", "work")
+    if "naukri.com" in low:
+        return ("Naukri", "business_center")
+    if "github.com" in low:
+        return ("GitHub", "code")
+    if "indeed.com" in low:
+        return ("Indeed", "search")
+    return ("Profile", "open_in_new")
+
+
+def _resolve_external_profile_url(hunt_cand) -> str | None:
+    """Prefer hunt-row URL; fall back to master Candidate links."""
+    for attr in ("linkedin_url", "portfolio_url", "github_url"):
+        val = getattr(hunt_cand, attr, None)
+        if val and str(val).strip():
+            return str(val).strip()
+    master = getattr(hunt_cand, "candidate", None)
+    if master is not None:
+        for attr in ("linkedin_url", "portfolio_url", "github_url"):
+            val = getattr(master, attr, None)
+            if val and str(val).strip():
+                return str(val).strip()
+    return None
+
+
 def render_pipeline(hunt_id: int = 1):
     """Render the Kanban pipeline view for a given hunt ID."""
     init_db()
@@ -27,11 +56,20 @@ def render_pipeline(hunt_id: int = 1):
     with SessionFactory() as db:
         hunts_list = list_hunts(db)
         if not hunts_list:
-            from app.ui.pages.hunts import seed_demo_hunts_if_empty
-            seed_demo_hunts_if_empty(db)
-            hunts_list = list_hunts(db)
+            with ui.column().classes('w-full min-h-[60vh] items-center justify-center gap-3'):
+                ui.icon('view_kanban', size='xl').classes('text-[#3f6678]')
+                ui.label('No pipeline yet').classes('text-lg font-semibold text-[#edf5f7]')
+                ui.label('Create a Talent Hunt before adding candidates to a pipeline.').classes(
+                    'th-muted text-center'
+                )
+                ui.button(
+                    'Create Talent Hunt',
+                    icon='add',
+                    on_click=lambda: ui.navigate.to('/hunts'),
+                ).classes('th-primary-btn')
+            return
 
-        current_hunt_id = hunt_id if any(h.id == hunt_id for h in hunts_list) else (hunts_list[0].id if hunts_list else 1)
+        current_hunt_id = hunt_id if any(h.id == hunt_id for h in hunts_list) else hunts_list[0].id
         pipeline_data = get_pipeline_data(db, current_hunt_id)
         hunt_options = {h.id: h.title for h in hunts_list}
 
@@ -57,6 +95,11 @@ def render_pipeline(hunt_id: int = 1):
                     value=current_hunt_id,
                     on_change=lambda e: ui.navigate.to(f'/hunts/{e.value}/pipeline')
                 ).props('dense outlined dark').classes('w-64 text-xs')
+
+                ui.button(
+                    icon='add_chart',
+                    on_click=lambda: open_add_stage_dialog(current_hunt_id),
+                ).props('flat round dense').classes('text-[#8de8df]').tooltip('Add Pipeline stage')
 
                 ui.button('＋ Add Candidate', on_click=lambda: open_add_candidate_dialog(current_hunt_id)).classes('th-primary-btn')
 
@@ -86,18 +129,19 @@ def render_pipeline(hunt_id: int = 1):
                         note = (note_in.value or "").strip() or None
                         author = _playbook_author()
                         try:
-                            with SessionFactory() as db:
-                                if action == "keep":
-                                    result = keep_hunt_candidate(
-                                        db, c["id"], note=note, author_name=author
-                                    )
-                                else:
-                                    result = pass_hunt_candidate(
-                                        db, c["id"], note=note, author_name=author
-                                    )
-                            if result.get("status") != "success":
-                                ui.notify(result.get("error") or "Triage failed", type="negative")
+                            action_result = dispatch_action(
+                                "pipeline.triage",
+                                {
+                                    "hunt_candidate_id": c["id"], "decision": action,
+                                    "note": note, "author": author,
+                                },
+                                actor_type="ui",
+                                session_id=f"hunt_{current_hunt_id}",
+                            )
+                            if not action_result.success:
+                                ui.notify(action_result.error or "Triage failed", type="negative")
                                 return
+                            result = action_result.data or {}
                             msg = (
                                 f"Kept — logged to Playbook"
                                 + (f" → {result.get('moved_to_stage')}" if result.get("moved_to_stage") else "")
@@ -160,6 +204,9 @@ def render_pipeline(hunt_id: int = 1):
                                     c_id = c.id
                                     raw_sc = (c.match_score * 100 if c.match_score <= 1.0 else c.match_score) if c.match_score is not None else 88.0
 
+                                    profile_url = _resolve_external_profile_url(c)
+                                    profile_meta = _profile_link_meta(profile_url)
+
                                     cand_info = {
                                         "id": c.id,
                                         "candidate_id": c.candidate_id,
@@ -172,8 +219,11 @@ def render_pipeline(hunt_id: int = 1):
                                         "status": c.status or "Active",
                                         "ai_summary": c.ai_summary,
                                         "notes": c.notes,
-                                        "linkedin_url": c.linkedin_url,
+                                        "linkedin_url": profile_url or c.linkedin_url,
                                         "github_url": c.github_url,
+                                        "profile_url": profile_url,
+                                        "profile_label": profile_meta[0] if profile_meta else None,
+                                        "profile_icon": profile_meta[1] if profile_meta else None,
                                         "source_platform": getattr(c, "source_platform", None),
                                         "source_query": getattr(c, "source_query", None),
                                         "stage_name": st_name,
@@ -219,11 +269,20 @@ def render_pipeline(hunt_id: int = 1):
                                                     on_click=lambda e, info=cand_info: open_triage_dialog(info, "pass")
                                                 ).props('dense flat no-caps').classes('text-[10px] text-orange-300 flex-1')
 
-                                        with ui.row().classes('w-full justify-between items-center pt-1 text-xs'):
-                                            with ui.row().classes('items-center gap-1'):
-                                                ui.button('View', icon='visibility', on_click=lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc)).props('flat dense').classes('text-[10px] text-[#8de8df] px-2 py-0.5')
-                                                if cand_info["linkedin_url"]:
-                                                    ui.button(icon='link', on_click=lambda e, u=cand_info["linkedin_url"]: ui.navigate.to(u, new_tab=True)).props('flat round dense').classes('text-[#19d3c5]').tooltip('LinkedIn Profile')
+                                        with ui.row().classes('w-full justify-between items-center pt-1 text-xs gap-1'):
+                                            with ui.row().classes('items-center gap-1 flex-wrap'):
+                                                ui.button(
+                                                    'View', icon='visibility',
+                                                    on_click=lambda e, info=cand_info, sc=raw_sc: open_candidate_quick_dialog(info, sc),
+                                                ).props('flat dense no-caps').classes('text-[10px] text-[#8de8df] px-2 py-0.5')
+                                                if cand_info.get("profile_url") and cand_info.get("profile_label"):
+                                                    ui.button(
+                                                        cand_info["profile_label"],
+                                                        icon=cand_info.get("profile_icon") or "open_in_new",
+                                                        on_click=lambda e, u=cand_info["profile_url"]: ui.navigate.to(u, new_tab=True),
+                                                    ).props('flat dense no-caps').classes(
+                                                        'text-[10px] text-[#19d3c5] px-2 py-0.5 border border-[#19d3c5]/40 rounded'
+                                                    ).tooltip(f'Open {cand_info["profile_label"]} profile')
 
                                             with ui.button(icon='arrow_forward').props('flat round dense').classes('text-[#19d3c5]').tooltip('Move Stage'):
                                                 with ui.menu().classes('bg-[#0e1b28] border border-[#1b3040]'):
@@ -241,18 +300,30 @@ def render_pipeline(hunt_id: int = 1):
 
         def handle_move_candidate(candidate_id: int, new_stage_id: int):
             try:
-                with SessionFactory() as db:
-                    move_candidate_stage(db, candidate_id, new_stage_id)
-                ui.notify('Candidate stage updated!', type='positive')
+                result = dispatch_action(
+                    "pipeline.move",
+                    {"hunt_candidate_id": candidate_id, "stage_id": new_stage_id},
+                    actor_type="ui",
+                    session_id=f"hunt_{hunt_id}",
+                )
+                if not result.success:
+                    raise RuntimeError(result.error or "Candidate move failed.")
+                ui.notify('Candidate stage updated. Undo is available in Action History.', type='positive')
                 refresh_board()
             except Exception as e:
                 ui.notify(f"Error: {e}", type="negative")
 
         def handle_remove_candidate(candidate_id: int):
             try:
-                with SessionFactory() as db:
-                    remove_candidate(db, candidate_id)
-                ui.notify('Candidate removed from pipeline.', type='info')
+                result = dispatch_action(
+                    "pipeline.remove",
+                    {"hunt_candidate_id": candidate_id},
+                    actor_type="ui",
+                    session_id=f"hunt_{current_hunt_id}",
+                )
+                if not result.success:
+                    raise RuntimeError(result.error or "Candidate removal failed.")
+                ui.notify('Removed from this Pipeline. Master profile preserved; Undo is available.', type='info')
                 refresh_board()
             except Exception as e:
                 ui.notify(f"Error: {e}", type="negative")
@@ -302,8 +373,17 @@ def render_pipeline(hunt_id: int = 1):
 
                 with ui.row().classes('w-full justify-between items-center mt-3 pt-2 border-t border-teal-900/30'):
                     with ui.row().classes('items-center gap-2'):
-                        if c.get("linkedin_url"):
-                            ui.button('LinkedIn', icon='link', on_click=lambda e, u=c["linkedin_url"]: ui.navigate.to(u, new_tab=True)).props('flat dense').classes('text-xs text-teal-400')
+                        if c.get("profile_url") and c.get("profile_label"):
+                            ui.button(
+                                c["profile_label"],
+                                icon=c.get("profile_icon") or "open_in_new",
+                                on_click=lambda e, u=c["profile_url"]: ui.navigate.to(u, new_tab=True),
+                            ).props('flat dense').classes('text-xs text-teal-300')
+                        elif c.get("linkedin_url"):
+                            ui.button(
+                                'LinkedIn', icon='work',
+                                on_click=lambda e, u=c["linkedin_url"]: ui.navigate.to(u, new_tab=True),
+                            ).props('flat dense').classes('text-xs text-teal-400')
                         if c.get("github_url"):
                             ui.button('GitHub', icon='code', on_click=lambda e, u=c["github_url"]: ui.navigate.to(u, new_tab=True)).props('flat dense').classes('text-xs text-amber-400')
 
@@ -337,9 +417,6 @@ def render_pipeline(hunt_id: int = 1):
                     ui.label('Email').classes('th-caption')
                     email_in = ui.input(placeholder='e.g., sarah@example.com').classes('w-full').props('dark outlined dense')
                 with ui.column().classes('w-full gap-1'):
-                    ui.label('AI Match Score (%)').classes('th-caption')
-                    score_in = ui.number(value=88, min=0, max=100).classes('w-full').props('dark outlined dense')
-                with ui.column().classes('w-full gap-1'):
                     ui.label('AI Match Summary / Notes').classes('th-caption')
                     summary_in = ui.textarea(placeholder='Notes…').classes('w-full').props('dark outlined dense')
 
@@ -349,22 +426,65 @@ def render_pipeline(hunt_id: int = 1):
                         if not name_in.value.strip():
                             ui.notify('Candidate full name is required.', type='negative')
                             return
-                        with SessionFactory() as db:
-                            add_candidate_to_hunt(
-                                db,
-                                hunt_id=h_id,
-                                full_name=name_in.value.strip(),
-                                current_title=title_in.value.strip() or None,
-                                current_company=company_in.value.strip() or None,
-                                email=email_in.value.strip() or None,
-                                match_score=float(score_in.value) if score_in.value else None,
-                                ai_summary=summary_in.value.strip() or None,
+                        result = dispatch_action(
+                            "candidates.create",
+                            {
+                                "hunt_id": h_id,
+                                "full_name": name_in.value.strip(),
+                                "current_title": title_in.value.strip() or None,
+                                "current_company": company_in.value.strip() or None,
+                                "email": email_in.value.strip() or None,
+                                "summary": summary_in.value.strip() or None,
+                                "status": "Sourced",
+                            },
+                            actor_type="ui",
+                            session_id=f"hunt_{h_id}",
+                        )
+                        if not result.success:
+                            ui.notify(result.error or 'Candidate could not be added.', type='negative')
+                            return
+                        if (result.data or {}).get("status") == "conflict":
+                            ui.notify(
+                                f"Possible duplicate: {(result.data or {}).get('candidate_name')}. Review the existing profile.",
+                                type='warning',
                             )
-                        ui.notify('Candidate added successfully!', type='positive')
+                            return
+                        ui.notify('Candidate added to the Common Pool and this Pipeline. Undo is available.', type='positive')
                         dialog.close()
                         refresh_board()
 
                     ui.button('Add Candidate', icon='check', on_click=save_c).classes('th-primary-btn')
+            dialog.open()
+
+        def open_add_stage_dialog(h_id):
+            with ui.dialog() as dialog, ui.card().classes('w-full max-w-sm p-5 th-card gap-3'):
+                ui.label('Add Pipeline Stage').classes('text-lg font-bold text-[#edf5f7]')
+                name_in = ui.input(placeholder='e.g., Technical Review').props(
+                    'dark outlined dense autofocus'
+                ).classes('w-full')
+                color_in = ui.color_input(label='Stage color', value='#19d3c5').classes('w-full')
+                with ui.row().classes('w-full justify-end gap-2'):
+                    ui.button('Cancel', on_click=dialog.close).props('flat')
+
+                    def save_stage():
+                        name = (name_in.value or '').strip()
+                        if not name:
+                            ui.notify('Stage name is required.', type='negative')
+                            return
+                        result = dispatch_action(
+                            'pipeline.stages.add',
+                            {'hunt_id': h_id, 'name': name, 'color': color_in.value or '#19d3c5'},
+                            actor_type='ui',
+                            session_id=f'hunt_{h_id}',
+                        )
+                        if not result.success:
+                            ui.notify(result.error or 'Stage could not be added.', type='negative')
+                            return
+                        ui.notify('Pipeline stage added. Undo is available.', type='positive')
+                        dialog.close()
+                        refresh_board()
+
+                    ui.button('Add Stage', icon='add', on_click=save_stage).classes('th-primary-btn')
             dialog.open()
 
         refresh_board()

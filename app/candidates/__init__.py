@@ -1,6 +1,17 @@
 """Candidates module for TalentHunt OS (Phase 5)."""
 
-from app.candidates.models import Candidate, CandidateProfile, CandidateTag, CandidateExperience, CandidateEducation, CandidateNote
+from app.candidates.models import (
+    Candidate,
+    CandidateProfile,
+    CandidateTag,
+    CandidateExperience,
+    CandidateEducation,
+    CandidateNote,
+    CandidateIntakeRequest,
+    CandidateIntakeSubmission,
+    DiscoveredProfile,
+    DiscoveryHuntMatch,
+)
 
 __all__ = [
     "Candidate",
@@ -9,4 +20,8 @@ __all__ = [
     "CandidateExperience",
     "CandidateEducation",
     "CandidateNote",
+    "CandidateIntakeRequest",
+    "CandidateIntakeSubmission",
+    "DiscoveredProfile",
+    "DiscoveryHuntMatch",
 ]

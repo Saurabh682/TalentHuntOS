@@ -85,12 +85,13 @@ def test_feature_flag_model(db_session: Session):
 
 @patch("app.infrastructure.db.Base.metadata.create_all")
 def test_init_db(mock_create_all):
-    import sys
+    import app.infrastructure.db as db_module
+
     with patch.dict('sys.modules', {
         'app.hunts.models': MagicMock(),
         'app.candidates.models': MagicMock(),
         'app.communications.models': MagicMock()
-    }):
+    }), patch.object(db_module, "_db_initialized", False):
         init_db()
         mock_create_all.assert_called_once()
 

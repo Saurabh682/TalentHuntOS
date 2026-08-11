@@ -1,8 +1,11 @@
 """Outreach Sequence & Automated Drip Campaign Execution Engine."""
 
+import json
+import logging
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.communications.models import (
@@ -15,6 +18,9 @@ from app.candidates.models import Candidate
 from app.communications.service import log_communication
 from app.communications.email_service import send_email
 from app.communications.template_engine import generate_candidate_outreach, render_template
+
+logger = logging.getLogger("talenthunt.communications.outreach")
+_process_lock = threading.Lock()
 
 
 def create_sequence(
@@ -130,7 +136,7 @@ def resume_enrollment(db: Session, enrollment_id: int) -> Optional[OutreachEnrol
     return enr
 
 
-def process_due_outreach_steps(db: Session) -> List[Dict[str, Any]]:
+def _process_due_outreach_steps(db: Session) -> List[Dict[str, Any]]:
     """Process all active candidate enrollments whose next step is due.
     
     Renders message templates, logs communication records, sends mock email,
@@ -268,10 +274,16 @@ def process_due_outreach_steps(db: Session) -> List[Dict[str, Any]]:
             "channel": step.channel,
             "communication_id": comm_record.id if comm_record else None,
             "subject": rendered_subject,
-            "status": "sent",
+            "status": "sent" if send_res["success"] else "failed",
         })
 
     return processed_results
+
+
+def process_due_outreach_steps(db: Session) -> List[Dict[str, Any]]:
+    """Serialize drip processing so a due enrollment cannot be sent twice."""
+    with _process_lock:
+        return _process_due_outreach_steps(db)
 
 
 def seed_default_sequence_if_empty(db: Session) -> None:

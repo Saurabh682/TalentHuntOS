@@ -110,16 +110,23 @@ def render_analytics():
                     with ui.row().classes('justify-between items-center w-full mb-1'):
                         ui.label('Time-to-Fill').classes('text-xs font-semibold text-slate-400 uppercase tracking-wider')
                         ui.icon('schedule', size='sm', color='indigo-4')
-                    ui.label(f'{kpi.get("avg_time_to_fill_days", 0)}d').classes('text-3xl font-bold text-indigo-400')
-                    ui.label('Average days to position fill').classes('text-xs text-slate-500 mt-1')
+                    time_to_fill = kpi.get("avg_time_to_fill_days", 0)
+                    ui.label(f'{time_to_fill}d' if time_to_fill else '—').classes('text-3xl font-bold text-indigo-400')
+                    ui.label(
+                        'Average days to position fill' if time_to_fill else 'No hires recorded yet'
+                    ).classes('text-xs text-slate-500 mt-1')
 
                 # AI Cost Savings
                 with ui.card().classes('col p-4 th-card border border-teal-500/20'):
                     with ui.row().classes('justify-between items-center w-full mb-1'):
-                        ui.label('AI Net Cost Saved').classes('text-xs font-semibold text-slate-400 uppercase tracking-wider')
+                        ui.label('Recorded AI Savings').classes('text-xs font-semibold text-slate-400 uppercase tracking-wider')
                         ui.icon('savings', size='sm', color='cyan-4')
                     ui.label(f'${kpi.get("estimated_cost_saved", 0.0)}').classes('text-3xl font-bold text-cyan-400')
-                    ui.label(f'{kpi.get("ai_actions", 0)} local AI operations').classes('text-xs text-slate-500 mt-1')
+                    ui.label(
+                        'No provider cost telemetry'
+                        if not kpi.get("estimated_cost_saved", 0)
+                        else f'{kpi.get("ai_actions", 0)} recorded AI operations'
+                    ).classes('text-xs text-slate-500 mt-1')
 
         def render_charts():
             charts_container.clear()
@@ -298,7 +305,7 @@ def render_analytics():
                                 },
                                 'label': {'show': False},
                                 'data': pie_data,
-                                'color': ['#10b981', '#3b82f6', '#f59e0b', '#ef4444']
+                                'color': ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#64748b']
                             }]
                         }).classes('h-72 w-full')
 
@@ -314,11 +321,14 @@ def render_analytics():
                                 ui.label('Total AI Operations').classes('text-xs text-slate-400')
                                 ui.label(str(ai_cost_data.get("total_operations", 0))).classes('text-xl font-bold text-slate-100')
                             with ui.column().classes('gap-0'):
-                                ui.label('Executed on Local GGUF').classes('text-xs text-slate-400')
+                                ui.label('Recorded Local GGUF').classes('text-xs text-slate-400')
                                 ui.label(f'{ai_cost_data.get("local_operations", 0)} ops').classes('text-xl font-bold text-teal-400')
                             with ui.column().classes('gap-0'):
-                                ui.label('Cloud API Operations').classes('text-xs text-slate-400')
+                                ui.label('Recorded Cloud API').classes('text-xs text-slate-400')
                                 ui.label(f'{ai_cost_data.get("cloud_operations", 0)} ops').classes('text-xl font-bold text-amber-400')
+                            with ui.column().classes('gap-0'):
+                                ui.label('Provider Unattributed').classes('text-xs text-slate-400')
+                                ui.label(f'{ai_cost_data.get("unattributed_operations", 0)} ops').classes('text-xl font-bold text-slate-300')
                             with ui.column().classes('gap-0'):
                                 ui.label('Actual Cloud API Cost').classes('text-xs text-slate-400')
                                 ui.label(f'${ai_cost_data.get("actual_cloud_cost", 0.0)}').classes('text-xl font-bold text-slate-200')
@@ -349,6 +359,7 @@ def render_analytics():
                             'series': [{
                                 'name': 'AI Operations',
                                 'type': 'bar',
+                                'data': op_vals,
                                 'barWidth': '40%',
                                 'itemStyle': {
                                     'color': '#06b6d4',

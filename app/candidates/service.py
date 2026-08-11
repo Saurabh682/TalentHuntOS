@@ -8,6 +8,7 @@ with a vector search index for candidate matching.
 
 import json
 import logging
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 from sqlalchemy.orm import Session, selectinload
@@ -34,6 +35,10 @@ def create_candidate(
     location: Optional[str] = None,
     current_title: Optional[str] = None,
     current_company: Optional[str] = None,
+    pronouns: Optional[str] = None,
+    connection_degree: Optional[str] = None,
+    connections_count: Optional[int] = None,
+    profile_image_url: Optional[str] = None,
     experience_years: Optional[float] = None,
     linkedin_url: Optional[str] = None,
     github_url: Optional[str] = None,
@@ -44,6 +49,7 @@ def create_candidate(
     resume_text: Optional[str] = None,
     skills: Optional[List[str]] = None,
     languages: Optional[List[str]] = None,
+    highlights: Optional[List[str]] = None,
     tags: Optional[List[str]] = None,
     ai_evaluation: Optional[str] = None,
 ) -> Optional[Candidate]:
@@ -98,6 +104,14 @@ def create_candidate(
                         ec.current_title = current_title
                     if current_company:
                         ec.current_company = current_company
+                    if pronouns:
+                        ec.pronouns = pronouns
+                    if connection_degree:
+                        ec.connection_degree = connection_degree
+                    if connections_count is not None:
+                        ec.connections_count = connections_count
+                    if profile_image_url:
+                        ec.profile_image_url = profile_image_url
                     if location and not ec.location:
                         ec.location = location
                     if experience_years is not None and experience_years > 0:
@@ -167,6 +181,10 @@ def create_candidate(
             location=location,
             current_title=current_title,
             current_company=current_company,
+            pronouns=pronouns,
+            connection_degree=connection_degree,
+            connections_count=connections_count,
+            profile_image_url=profile_image_url,
             experience_years=experience_years,
             linkedin_url=linkedin_url,
             github_url=github_url,
@@ -191,6 +209,7 @@ def create_candidate(
             resume_text=resume_text,
             skills_json=skills_json,
             languages_json=languages_json,
+            highlights_json=json.dumps(highlights or []),
             ai_evaluation=ai_evaluation,
             chroma_doc_id=f"cand_{candidate.id}",
         )
@@ -287,6 +306,8 @@ def list_candidates(
 
         if status and status != "All":
             stmt = stmt.where(Candidate.status == status)
+        elif status != "Archived":
+            stmt = stmt.where(Candidate.status != "Archived")
 
         if search:
             search_term = f"%{search.strip().lower()}%"
@@ -617,6 +638,413 @@ def add_candidate_education(
     except Exception as e:
         db.rollback()
         logger.error(f"Unexpected error while adding education for candidate {candidate_id}: {e}")
+        return None
+
+
+def _reindex_candidate(db: Session, candidate: Candidate) -> None:
+    """Best-effort vector reindex after profile section writes."""
+    try:
+        from app.candidates.search import candidate_search_index
+
+        skills_list: List[str] = []
+        if candidate.profile and candidate.profile.skills_json:
+            try:
+                skills_list = json.loads(candidate.profile.skills_json)
+            except json.JSONDecodeError:
+                skills_list = []
+        candidate_search_index.index_candidate(
+            candidate_id=candidate.id,
+            full_name=candidate.full_name,
+            title=candidate.current_title or "",
+            skills=skills_list,
+            summary=candidate.profile.summary if candidate.profile else "",
+            resume_text=candidate.profile.resume_text if candidate.profile else "",
+            location=candidate.location or "",
+        )
+    except Exception as e:
+        logger.warning(f"Vector search re-indexing failed for candidate {candidate.id}: {e}")
+
+
+def serialize_candidate_profile_state(candidate: Candidate) -> Dict[str, Any]:
+    """Capture every recruiter-editable profile field needed for exact undo."""
+    scalar_fields = (
+        "full_name", "email", "phone", "location", "current_title", "current_company",
+        "pronouns", "connection_degree", "connections_count", "profile_image_url",
+        "experience_years", "linkedin_url", "github_url", "portfolio_url", "status",
+    )
+    profile_fields = (
+        "headline", "summary", "resume_text", "skills_json", "languages_json", "highlights_json",
+        "ai_evaluation", "chroma_doc_id",
+    )
+
+    def serialize_row(row: Any, fields: tuple[str, ...]) -> Dict[str, Any]:
+        data = {field: getattr(row, field) for field in fields}
+        data["id"] = row.id
+        if getattr(row, "created_at", None):
+            data["created_at"] = row.created_at.isoformat()
+        return data
+
+    return {
+        "candidate_id": candidate.id,
+        "candidate": {field: getattr(candidate, field) for field in scalar_fields},
+        "profile": (
+            {field: getattr(candidate.profile, field) for field in profile_fields}
+            if candidate.profile else None
+        ),
+        "experiences": [
+            serialize_row(row, (
+                "company", "title", "location", "start_date", "end_date", "is_current",
+                "employment_type", "description", "skills_json",
+            ))
+            for row in (candidate.experiences or [])
+        ],
+        "educations": [
+            serialize_row(row, (
+                "institution", "degree", "field_of_study", "start_year", "end_year",
+                "grade", "activities", "description",
+            ))
+            for row in (candidate.educations or [])
+        ],
+    }
+
+
+def restore_candidate_profile_state(db: Session, state: Dict[str, Any]) -> Optional[Candidate]:
+    """Restore a state produced by :func:`serialize_candidate_profile_state`."""
+    candidate_id = state.get("candidate_id")
+    candidate = get_candidate(db, int(candidate_id)) if candidate_id is not None else None
+    if not candidate:
+        return None
+
+    for field, value in (state.get("candidate") or {}).items():
+        if hasattr(candidate, field):
+            setattr(candidate, field, value)
+
+    profile_state = state.get("profile")
+    if profile_state is None:
+        if candidate.profile:
+            db.delete(candidate.profile)
+            candidate.profile = None
+    else:
+        if not candidate.profile:
+            candidate.profile = CandidateProfile(candidate_id=candidate.id)
+            db.add(candidate.profile)
+        for field, value in profile_state.items():
+            if hasattr(candidate.profile, field):
+                setattr(candidate.profile, field, value)
+
+    for row in list(candidate.experiences or []):
+        db.delete(row)
+    for row in list(candidate.educations or []):
+        db.delete(row)
+    db.flush()
+
+    for row in state.get("experiences", []):
+        created_at = row.get("created_at")
+        db.add(CandidateExperience(
+            id=row.get("id"),
+            candidate_id=candidate.id,
+            company=row.get("company") or "Unknown",
+            title=row.get("title") or "Unknown",
+            location=row.get("location"),
+            start_date=row.get("start_date"),
+            end_date=row.get("end_date"),
+            is_current=bool(row.get("is_current", False)),
+            employment_type=row.get("employment_type"),
+            description=row.get("description"),
+            skills_json=row.get("skills_json"),
+            created_at=datetime.fromisoformat(created_at) if created_at else None,
+        ))
+    for row in state.get("educations", []):
+        created_at = row.get("created_at")
+        db.add(CandidateEducation(
+            id=row.get("id"),
+            candidate_id=candidate.id,
+            institution=row.get("institution") or "Unknown",
+            degree=row.get("degree"),
+            field_of_study=row.get("field_of_study"),
+            start_year=row.get("start_year"),
+            end_year=row.get("end_year"),
+            grade=row.get("grade"),
+            activities=row.get("activities"),
+            description=row.get("description"),
+            created_at=datetime.fromisoformat(created_at) if created_at else None,
+        ))
+    db.flush()
+    return candidate
+
+
+def replace_or_merge_profile_sections(
+    db: Session,
+    candidate_id: int,
+    *,
+    experiences: Optional[List[Dict[str, Any]]] = None,
+    educations: Optional[List[Dict[str, Any]]] = None,
+    skills: Optional[List[str]] = None,
+    highlights: Optional[List[str]] = None,
+    full_name: Optional[str] = None,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
+    location: Optional[str] = None,
+    current_title: Optional[str] = None,
+    current_company: Optional[str] = None,
+    pronouns: Optional[str] = None,
+    connection_degree: Optional[str] = None,
+    connections_count: Optional[int] = None,
+    profile_image_url: Optional[str] = None,
+    headline: Optional[str] = None,
+    summary: Optional[str] = None,
+    experience_years: Optional[float] = None,
+    resume_text: Optional[str] = None,
+    mode: str = "merge",
+    record_history: bool = True,
+    actor_type: str = "ui",
+    session_id: Optional[str] = None,
+) -> Optional[Candidate]:
+    """Apply structured experience / education / skills to a candidate.
+
+    Args:
+        mode: ``merge`` appends experiences/educations and unions skills;
+              ``replace`` clears existing experiences/educations first and replaces skills.
+    """
+    candidate = get_candidate(db, candidate_id)
+    if not candidate:
+        return None
+
+    mode_norm = (mode or "merge").strip().lower()
+    if mode_norm not in {"merge", "replace"}:
+        mode_norm = "merge"
+
+    before_state = serialize_candidate_profile_state(candidate) if record_history else None
+
+    try:
+        if not candidate.profile and (
+            skills is not None or highlights is not None or headline or summary or resume_text
+        ):
+            prof = CandidateProfile(candidate_id=candidate.id)
+            db.add(prof)
+            db.flush()
+            candidate.profile = prof
+
+        if mode_norm == "replace":
+            if experiences is not None:
+                for exp in list(candidate.experiences or []):
+                    db.delete(exp)
+                db.flush()
+            if educations is not None:
+                for edu in list(candidate.educations or []):
+                    db.delete(edu)
+                db.flush()
+
+        existing_experience_map = {
+            (
+                (exp.company or "").strip().lower(),
+                (exp.title or "").strip().lower(),
+                (exp.start_date or "").strip().lower(),
+                (exp.end_date or "").strip().lower(),
+            ): exp
+            for exp in (candidate.experiences or [])
+        } if mode_norm == "merge" else {}
+        existing_education_map = {
+            (
+                (edu.institution or "").strip().lower(),
+                (edu.degree or "").strip().lower(),
+                (edu.field_of_study or "").strip().lower(),
+                edu.start_year,
+                edu.end_year,
+            ): edu
+            for edu in (candidate.educations or [])
+        } if mode_norm == "merge" else {}
+
+        if experiences:
+            for item in experiences:
+                company = (item.get("company") or "").strip()
+                title = (item.get("title") or "").strip()
+                if not company or not title:
+                    continue
+                exp_key = (
+                    company.lower(),
+                    title.lower(),
+                    str(item.get("start_date") or "").strip().lower(),
+                    str(item.get("end_date") or "").strip().lower(),
+                )
+                existing_exp = existing_experience_map.get(exp_key)
+                if existing_exp:
+                    for field in ("location", "employment_type", "description"):
+                        incoming = item.get(field)
+                        if incoming and (not getattr(existing_exp, field, None) or field == "description"):
+                            setattr(existing_exp, field, incoming)
+                    incoming_skills = [str(value).strip() for value in item.get("skills") or [] if str(value).strip()]
+                    if incoming_skills:
+                        try:
+                            old_skills = json.loads(existing_exp.skills_json or "[]")
+                        except (TypeError, json.JSONDecodeError):
+                            old_skills = []
+                        existing_exp.skills_json = json.dumps(list(dict.fromkeys([*old_skills, *incoming_skills])))
+                    continue
+                row = CandidateExperience(
+                        candidate_id=candidate.id,
+                        company=company,
+                        title=title,
+                        location=(item.get("location") or None),
+                        start_date=(item.get("start_date") or None),
+                        end_date=(item.get("end_date") or None),
+                        is_current=bool(item.get("is_current", False)),
+                        employment_type=(item.get("employment_type") or None),
+                        description=(item.get("description") or None),
+                        skills_json=json.dumps(item.get("skills") or []),
+                    )
+                db.add(row)
+                existing_experience_map[exp_key] = row
+
+        if educations:
+            for item in educations:
+                institution = (item.get("institution") or "").strip()
+                if not institution:
+                    continue
+                start_year = item.get("start_year")
+                end_year = item.get("end_year")
+                try:
+                    start_year = int(start_year) if start_year not in (None, "") else None
+                except (TypeError, ValueError):
+                    start_year = None
+                try:
+                    end_year = int(end_year) if end_year not in (None, "") else None
+                except (TypeError, ValueError):
+                    end_year = None
+                edu_key = (
+                    institution.lower(),
+                    str(item.get("degree") or "").strip().lower(),
+                    str(item.get("field_of_study") or "").strip().lower(),
+                    start_year,
+                    end_year,
+                )
+                existing_edu = existing_education_map.get(edu_key)
+                if existing_edu:
+                    for field in ("grade", "activities", "description"):
+                        incoming = item.get(field)
+                        if incoming and (not getattr(existing_edu, field, None) or field == "description"):
+                            setattr(existing_edu, field, incoming)
+                    continue
+                row = CandidateEducation(
+                        candidate_id=candidate.id,
+                        institution=institution,
+                        degree=(item.get("degree") or None),
+                        field_of_study=(item.get("field_of_study") or None),
+                        start_year=start_year,
+                        end_year=end_year,
+                        grade=(item.get("grade") or None),
+                        activities=(item.get("activities") or None),
+                        description=(item.get("description") or None),
+                    )
+                db.add(row)
+                existing_education_map[edu_key] = row
+
+        if skills is not None and candidate.profile:
+            clean_skills = [str(s).strip() for s in skills if str(s).strip()]
+            if mode_norm == "merge" and candidate.profile.skills_json:
+                try:
+                    old = json.loads(candidate.profile.skills_json) or []
+                except json.JSONDecodeError:
+                    old = []
+                merged: List[str] = []
+                seen_skills: set[str] = set()
+                for skill in [*old, *clean_skills]:
+                    key = str(skill).strip().lower()
+                    if not key or key in seen_skills:
+                        continue
+                    seen_skills.add(key)
+                    merged.append(str(skill).strip())
+                clean_skills = merged
+            candidate.profile.skills_json = json.dumps(clean_skills)
+
+        if highlights is not None and candidate.profile:
+            clean_highlights = [str(item).strip() for item in highlights if str(item).strip()]
+            if mode_norm == "merge" and candidate.profile.highlights_json:
+                try:
+                    old_highlights = json.loads(candidate.profile.highlights_json) or []
+                except json.JSONDecodeError:
+                    old_highlights = []
+                clean_highlights = list(dict.fromkeys([*old_highlights, *clean_highlights]))
+            candidate.profile.highlights_json = json.dumps(clean_highlights)
+
+        scalar_updates = {
+            "full_name": full_name,
+            "email": email,
+            "phone": phone,
+            "location": location,
+            "current_title": current_title,
+            "current_company": current_company,
+            "pronouns": pronouns,
+            "connection_degree": connection_degree,
+            "connections_count": connections_count,
+            "profile_image_url": profile_image_url,
+        }
+        for field, value in scalar_updates.items():
+            if value in (None, ""):
+                continue
+            if mode_norm == "replace" or not getattr(candidate, field, None):
+                setattr(candidate, field, value.strip() if isinstance(value, str) else value)
+
+        if headline and candidate.profile:
+            candidate.profile.headline = headline
+        if summary and candidate.profile:
+            if mode_norm == "replace" or not candidate.profile.summary:
+                candidate.profile.summary = summary
+            elif len(summary) > len(candidate.profile.summary or ""):
+                candidate.profile.summary = summary
+        if resume_text and candidate.profile:
+            if mode_norm == "replace" or not candidate.profile.resume_text:
+                candidate.profile.resume_text = resume_text
+        if experience_years is not None and experience_years >= 0:
+            candidate.experience_years = float(experience_years)
+
+        if experiences is not None:
+            db.flush()
+            from app.hunts.experience import estimate_years_from_experience_rows
+
+            db.expire(candidate, ["experiences"])
+            timeline_years = estimate_years_from_experience_rows(candidate.experiences or [])
+            if timeline_years is not None:
+                candidate.experience_years = timeline_years
+
+        # Refresh current title/company from newest current experience when empty
+        if experiences:
+            current = next(
+                (e for e in experiences if e.get("is_current")),
+                experiences[0] if experiences else None,
+            )
+            if current:
+                if (mode_norm == "replace" or not candidate.current_title) and current.get("title"):
+                    candidate.current_title = str(current["title"]).strip()
+                if (mode_norm == "replace" or not candidate.current_company) and current.get("company"):
+                    candidate.current_company = str(current["company"]).strip()
+
+        db.commit()
+        db.refresh(candidate)
+        # Reload relationships
+        candidate = get_candidate(db, candidate_id)
+        if candidate:
+            _reindex_candidate(db, candidate)
+            if before_state is not None:
+                from app.actions.history import record_action
+
+                record_action(
+                    db,
+                    action_type="update_candidate_profile",
+                    summary=f"Updated profile sections for {candidate.full_name}",
+                    actor_type=actor_type,
+                    session_id=session_id,
+                    payload={"candidate_id": candidate.id, "mode": mode_norm},
+                    undo_payload={"candidate_state": before_state},
+                )
+        return candidate
+    except SQLAlchemyError as e:
+        db.rollback()
+        logger.error(f"Database error while applying profile sections for {candidate_id}: {e}")
+        return None
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Unexpected error applying profile sections for {candidate_id}: {e}")
         return None
 
 
