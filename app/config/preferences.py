@@ -15,6 +15,8 @@ _PLAIN_FIELDS = (
     "llama_server_host",
     "llama_server_port",
     "enable_local_ai",
+    "local_ai_mode",
+    "local_ai_autostart",
 )
 _SECRET_FIELDS = (
     "gemini_api_key",

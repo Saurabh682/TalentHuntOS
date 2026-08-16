@@ -4,22 +4,23 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from sqlalchemy import select, update, delete
+
+from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
-logger = logging.getLogger(__name__)
-
 from app.communications.models import (
+    BrowserSession,
     Communication,
     CommunicationThread,
-    MessageTemplate,
     EmailAccount,
-    BrowserSession,
+    MessageTemplate,
 )
 
+logger = logging.getLogger(__name__)
 
 # --- Thread & Communication Logging Services ---
+
 
 def create_thread(
     db: Session,
@@ -149,7 +150,7 @@ def log_communication(
                 candidate_id=candidate_id,
                 subject=subject or f"{channel.title()} Thread",
                 channel=channel,
-                status="active"
+                status="active",
             )
             db.add(thread)
             db.flush()
@@ -269,6 +270,7 @@ def update_communication_status(db: Session, comm_id: int, status: str) -> Optio
 
 # --- Message Template Services ---
 
+
 def create_template(
     db: Session,
     name: str,
@@ -299,7 +301,8 @@ def create_template(
             category=category,
             subject=subject,
             body_template=body_template,
-            variables_json=variables_json or json.dumps(["candidate_name", "job_title", "company", "recruiter_name"]),
+            variables_json=variables_json
+            or json.dumps(["candidate_name", "job_title", "company", "recruiter_name"]),
         )
         db.add(tmpl)
         db.commit()
@@ -322,7 +325,7 @@ def list_templates(db: Session, channel: Optional[str] = None) -> List[MessageTe
         List[MessageTemplate]: A list of message templates.
     """
     try:
-        stmt = select(MessageTemplate).where(MessageTemplate.is_active == True)
+        stmt = select(MessageTemplate).where(MessageTemplate.is_active.is_(True))
         if channel and channel.lower() != "all":
             stmt = stmt.where(MessageTemplate.channel == channel)
         stmt = stmt.order_by(MessageTemplate.category, MessageTemplate.name)
@@ -475,6 +478,7 @@ def seed_default_templates_if_empty(db: Session) -> None:
 
 # --- Email Account Services ---
 
+
 def create_email_account(
     db: Session,
     email_address: str,
@@ -601,7 +605,7 @@ def get_default_email_account(db: Session) -> Optional[EmailAccount]:
         Optional[EmailAccount]: The default email account, or None if not found or an error occurred.
     """
     try:
-        acc = db.scalar(select(EmailAccount).where(EmailAccount.is_default == True).limit(1))
+        acc = db.scalar(select(EmailAccount).where(EmailAccount.is_default.is_(True)).limit(1))
         if not acc:
             acc = db.scalar(select(EmailAccount).limit(1))
         if acc and acc.smtp_password:
@@ -618,6 +622,7 @@ def get_default_email_account(db: Session) -> Optional[EmailAccount]:
 
 
 # --- Browser Session Services ---
+
 
 def create_browser_session(
     db: Session,
@@ -741,9 +746,14 @@ def upsert_browser_session_cookies(
         return None
 
 
-def get_decrypted_cookies_for_platform(db: Session, platform: str) -> Optional[List[Dict[str, Any]]]:
-    """Return cookie list for the latest active session, decrypting when sealed."""
-    from app.infrastructure.secret_box import open_secret, seal, is_sealed
+def get_decrypted_cookies_for_platform(
+    db: Session,
+    platform: str,
+    *,
+    touch: bool = True,
+) -> Optional[List[Dict[str, Any]]]:
+    """Return decrypted cookies; optionally avoid changing the last-used timestamp."""
+    from app.infrastructure.secret_box import is_sealed, open_secret, seal
 
     plat = (platform or "").strip().lower()
     try:
@@ -756,17 +766,25 @@ def get_decrypted_cookies_for_platform(db: Session, platform: str) -> Optional[L
             except ValueError:
                 logger.error("Cannot decrypt cookies for session %s", sess.id)
                 sess.is_active = False
-                sess.headers_json = json.dumps({
-                    "verified": False,
-                    "detail": "Saved session could not be decrypted after restart. Reconnect required.",
-                })
+                sess.headers_json = json.dumps(
+                    {
+                        "verified": False,
+                        "detail": "Saved session could not be decrypted after restart. Reconnect required.",
+                    }
+                )
                 try:
                     db.commit()
                 except Exception:
                     db.rollback()
                 continue
             raw = json.loads(plain)
-            cookies = raw if isinstance(raw, list) else raw.get("cookies") if isinstance(raw, dict) else None
+            cookies = (
+                raw
+                if isinstance(raw, list)
+                else raw.get("cookies")
+                if isinstance(raw, dict)
+                else None
+            )
             if not isinstance(cookies, list) or not cookies:
                 continue
             # Lazy-migrate legacy plaintext → sealed
@@ -777,7 +795,7 @@ def get_decrypted_cookies_for_platform(db: Session, platform: str) -> Optional[L
                     db.commit()
                 except Exception:
                     db.rollback()
-            else:
+            elif touch:
                 try:
                     sess.last_accessed_at = datetime.now(timezone.utc)
                     db.commit()
@@ -799,9 +817,7 @@ def deactivate_browser_sessions_for_platform(
     """Deactivate a platform while retaining encrypted data for seven-day undo."""
     plat = (platform or "").strip().lower()
     try:
-        rows = list(
-            db.scalars(select(BrowserSession).where(BrowserSession.platform == plat)).all()
-        )
+        rows = list(db.scalars(select(BrowserSession).where(BrowserSession.platform == plat)).all())
         active_ids = [row.id for row in rows if row.is_active]
         for row in rows:
             row.is_active = False

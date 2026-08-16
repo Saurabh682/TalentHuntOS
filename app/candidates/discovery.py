@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
 from sqlalchemy import func, or_, select
@@ -17,6 +17,7 @@ from app.candidates.models import Candidate, DiscoveredProfile, DiscoveryHuntMat
 logger = logging.getLogger("talenthunt.candidates.discovery")
 
 REVIEWABLE_STATUSES = ("shortlisted", "approved", "enriching", "scan_failed")
+ARCHIVED_STATUS = "archived"
 
 
 def utcnow() -> datetime:
@@ -102,13 +103,16 @@ def record_discovery(
             ("snippet", snippet),
         ):
             cleaned = (value or "").strip()
-            if cleaned and (not getattr(profile, attr) or len(cleaned) > len(getattr(profile, attr) or "")):
+            if cleaned and (
+                not getattr(profile, attr) or len(cleaned) > len(getattr(profile, attr) or "")
+            ):
                 setattr(profile, attr, cleaned)
         if experience_years is not None and 0 <= float(experience_years) <= 60:
             profile.experience_years = float(experience_years)
         if raw_payload:
             profile.raw_payload_json = json.dumps(raw_payload, ensure_ascii=False)
 
+    profile_is_archived = profile.status == ARCHIVED_STATUS
     match = db.scalar(
         select(DiscoveryHuntMatch).where(
             DiscoveryHuntMatch.discovered_profile_id == profile.id,
@@ -120,7 +124,7 @@ def record_discovery(
         match = DiscoveryHuntMatch(
             discovered_profile_id=profile.id,
             hunt_id=int(hunt_id),
-            status=status,
+            status=ARCHIVED_STATUS if profile_is_archived else status,
             source_platform=platform,
             source_query=source_query,
             match_score=match_score,
@@ -134,8 +138,11 @@ def record_discovery(
         match.source_platform = platform or match.source_platform
         match.source_query = source_query or match.source_query
         match.match_score = match_score if match_score is not None else match.match_score
+        # Archived identities stay suppressed until the archive action is undone.
+        if profile_is_archived:
+            match.status = ARCHIVED_STATUS
         # Recruiter decisions and imports are never reset by a later search sighting.
-        if match.status not in {"approved", "enriching", "imported", "scan_failed", "rejected"}:
+        elif match.status not in {"approved", "enriching", "imported", "scan_failed", "rejected"}:
             match.status = status
             match.rejection_reason = rejection_reason
     match.was_newly_shortlisted = bool(
@@ -164,6 +171,8 @@ def list_discoveries(
         stmt = stmt.where(DiscoveryHuntMatch.hunt_id == int(hunt_id))
     if statuses:
         stmt = stmt.where(DiscoveryHuntMatch.status.in_(tuple(statuses)))
+    else:
+        stmt = stmt.where(DiscoveryHuntMatch.status != ARCHIVED_STATUS)
     stmt = stmt.order_by(DiscoveryHuntMatch.last_seen_at.desc()).limit(max(1, min(limit, 500)))
     return list(db.scalars(stmt).all())
 
@@ -176,28 +185,36 @@ def list_common_pool_profiles(
     offset: int = 0,
     limit: int = 100,
 ) -> list[DiscoveredProfile]:
-    """List permanent identities once, independent of Hunt-specific decisions."""
-    stmt = select(DiscoveredProfile).options(
-        selectinload(DiscoveredProfile.candidate),
-        selectinload(DiscoveredProfile.hunt_matches).selectinload(DiscoveryHuntMatch.hunt),
+    """List visible retained identities once, independent of Hunt-specific decisions."""
+    stmt = (
+        select(DiscoveredProfile)
+        .options(
+            selectinload(DiscoveredProfile.candidate),
+            selectinload(DiscoveredProfile.hunt_matches).selectinload(DiscoveryHuntMatch.hunt),
+        )
+        .where(DiscoveredProfile.status != ARCHIVED_STATUS)
     )
     if hunt_id is not None:
-        stmt = stmt.join(DiscoveryHuntMatch).where(
-            DiscoveryHuntMatch.hunt_id == int(hunt_id)
-        )
+        stmt = stmt.join(DiscoveryHuntMatch).where(DiscoveryHuntMatch.hunt_id == int(hunt_id))
     needle = (search or "").strip()
     if needle:
-        pattern = f"%{needle}%"
-        stmt = stmt.where(
-            or_(
-                DiscoveredProfile.full_name.ilike(pattern),
-                DiscoveredProfile.headline.ilike(pattern),
-                DiscoveredProfile.current_company.ilike(pattern),
-                DiscoveredProfile.location.ilike(pattern),
-                DiscoveredProfile.platform.ilike(pattern),
-                DiscoveredProfile.snippet.ilike(pattern),
+        from app.candidates.fts import discovery_search_clause
+
+        fts_clause = discovery_search_clause(db, needle)
+        if fts_clause is not None:
+            stmt = stmt.where(fts_clause)
+        else:
+            pattern = f"%{needle}%"
+            stmt = stmt.where(
+                or_(
+                    DiscoveredProfile.full_name.ilike(pattern),
+                    DiscoveredProfile.headline.ilike(pattern),
+                    DiscoveredProfile.current_company.ilike(pattern),
+                    DiscoveredProfile.location.ilike(pattern),
+                    DiscoveredProfile.platform.ilike(pattern),
+                    DiscoveredProfile.snippet.ilike(pattern),
+                )
             )
-        )
     stmt = (
         stmt.order_by(DiscoveredProfile.last_seen_at.desc(), DiscoveredProfile.id.desc())
         .offset(max(0, int(offset)))
@@ -212,24 +229,34 @@ def common_pool_count(
     hunt_id: Optional[int] = None,
     search: Optional[str] = None,
 ) -> int:
-    stmt = select(func.count(func.distinct(DiscoveredProfile.id)))
+    stmt = select(func.count(func.distinct(DiscoveredProfile.id))).where(
+        DiscoveredProfile.status != ARCHIVED_STATUS
+    )
     if hunt_id is not None:
-        stmt = stmt.select_from(DiscoveredProfile).join(DiscoveryHuntMatch).where(
-            DiscoveryHuntMatch.hunt_id == int(hunt_id)
+        stmt = (
+            stmt.select_from(DiscoveredProfile)
+            .join(DiscoveryHuntMatch)
+            .where(DiscoveryHuntMatch.hunt_id == int(hunt_id))
         )
     needle = (search or "").strip()
     if needle:
-        pattern = f"%{needle}%"
-        stmt = stmt.where(
-            or_(
-                DiscoveredProfile.full_name.ilike(pattern),
-                DiscoveredProfile.headline.ilike(pattern),
-                DiscoveredProfile.current_company.ilike(pattern),
-                DiscoveredProfile.location.ilike(pattern),
-                DiscoveredProfile.platform.ilike(pattern),
-                DiscoveredProfile.snippet.ilike(pattern),
+        from app.candidates.fts import discovery_search_clause
+
+        fts_clause = discovery_search_clause(db, needle)
+        if fts_clause is not None:
+            stmt = stmt.where(fts_clause)
+        else:
+            pattern = f"%{needle}%"
+            stmt = stmt.where(
+                or_(
+                    DiscoveredProfile.full_name.ilike(pattern),
+                    DiscoveredProfile.headline.ilike(pattern),
+                    DiscoveredProfile.current_company.ilike(pattern),
+                    DiscoveredProfile.location.ilike(pattern),
+                    DiscoveredProfile.platform.ilike(pattern),
+                    DiscoveredProfile.snippet.ilike(pattern),
+                )
             )
-        )
     return int(db.scalar(stmt) or 0)
 
 
@@ -241,33 +268,40 @@ def common_pool_linked_candidate_count(
 ) -> int:
     """Count pool identities linked to canonical Candidate records."""
     stmt = select(func.count(func.distinct(DiscoveredProfile.id))).where(
-        DiscoveredProfile.candidate_id.is_not(None)
+        DiscoveredProfile.candidate_id.is_not(None),
+        DiscoveredProfile.status != ARCHIVED_STATUS,
     )
     if hunt_id is not None:
-        stmt = stmt.select_from(DiscoveredProfile).join(DiscoveryHuntMatch).where(
-            DiscoveryHuntMatch.hunt_id == int(hunt_id)
+        stmt = (
+            stmt.select_from(DiscoveredProfile)
+            .join(DiscoveryHuntMatch)
+            .where(DiscoveryHuntMatch.hunt_id == int(hunt_id))
         )
     needle = (search or "").strip()
     if needle:
-        pattern = f"%{needle}%"
-        stmt = stmt.where(
-            or_(
-                DiscoveredProfile.full_name.ilike(pattern),
-                DiscoveredProfile.headline.ilike(pattern),
-                DiscoveredProfile.current_company.ilike(pattern),
-                DiscoveredProfile.location.ilike(pattern),
-                DiscoveredProfile.platform.ilike(pattern),
-                DiscoveredProfile.snippet.ilike(pattern),
+        from app.candidates.fts import discovery_search_clause
+
+        fts_clause = discovery_search_clause(db, needle)
+        if fts_clause is not None:
+            stmt = stmt.where(fts_clause)
+        else:
+            pattern = f"%{needle}%"
+            stmt = stmt.where(
+                or_(
+                    DiscoveredProfile.full_name.ilike(pattern),
+                    DiscoveredProfile.headline.ilike(pattern),
+                    DiscoveredProfile.current_company.ilike(pattern),
+                    DiscoveredProfile.location.ilike(pattern),
+                    DiscoveredProfile.platform.ilike(pattern),
+                    DiscoveredProfile.snippet.ilike(pattern),
+                )
             )
-        )
     return int(db.scalar(stmt) or 0)
 
 
 def sync_candidate_identities_to_common_pool(db: Session) -> Dict[str, int]:
     """Backfill canonical candidates into permanent identity memory idempotently."""
-    candidates = list(
-        db.scalars(select(Candidate).options(selectinload(Candidate.profile))).all()
-    )
+    candidates = list(db.scalars(select(Candidate).options(selectinload(Candidate.profile))).all())
     profiles = list(db.scalars(select(DiscoveredProfile)).all())
     by_url = {profile.normalized_url: profile for profile in profiles}
     by_candidate = {
@@ -327,7 +361,7 @@ def sync_candidate_identities_to_common_pool(db: Session) -> Dict[str, int]:
             profile.candidate_id = candidate.id
             linked += 1
             changed = True
-        if profile.status != "imported":
+        if profile.status not in {"imported", ARCHIVED_STATUS}:
             profile.status = "imported"
             changed = True
         for attr, value in (
@@ -350,8 +384,10 @@ def sync_candidate_identities_to_common_pool(db: Session) -> Dict[str, int]:
 
 
 def discovery_counts(db: Session, *, hunt_id: Optional[int] = None) -> Dict[str, int]:
-    stmt = select(DiscoveryHuntMatch.status, func.count(DiscoveryHuntMatch.id)).group_by(
-        DiscoveryHuntMatch.status
+    stmt = (
+        select(DiscoveryHuntMatch.status, func.count(DiscoveryHuntMatch.id))
+        .where(DiscoveryHuntMatch.status != ARCHIVED_STATUS)
+        .group_by(DiscoveryHuntMatch.status)
     )
     if hunt_id is not None:
         stmt = stmt.where(DiscoveryHuntMatch.hunt_id == int(hunt_id))
@@ -386,15 +422,17 @@ def set_discovery_status(
 def recover_stale_enrichments(db: Session, *, stale_after_minutes: int = 10) -> int:
     """Make interrupted approval scans retryable after an app or worker restart."""
     cutoff = utcnow() - timedelta(minutes=max(1, int(stale_after_minutes)))
-    matches = list(db.scalars(
-        select(DiscoveryHuntMatch).where(
-            DiscoveryHuntMatch.status == "enriching",
-            or_(
-                DiscoveryHuntMatch.approved_at.is_(None),
-                DiscoveryHuntMatch.approved_at < cutoff,
-            ),
-        )
-    ).all())
+    matches = list(
+        db.scalars(
+            select(DiscoveryHuntMatch).where(
+                DiscoveryHuntMatch.status == "enriching",
+                or_(
+                    DiscoveryHuntMatch.approved_at.is_(None),
+                    DiscoveryHuntMatch.approved_at < cutoff,
+                ),
+            )
+        ).all()
+    )
     for match in matches:
         match.status = "scan_failed"
         match.scan_error = "The previous deep scan was interrupted. Retry approval to scan again."
@@ -412,6 +450,87 @@ def prune_raw_discoveries(db: Session, *, retention_days: int | None = None) -> 
     return 0
 
 
+def archive_common_pool_profiles(
+    db: Session,
+    *,
+    hunt_id: int | None = None,
+    search: str | None = None,
+    actor_type: str = "copilot",
+    session_id: str | None = None,
+) -> Dict[str, Any]:
+    """Hide matching Common Pool identities without deleting canonical Candidates."""
+    from app.actions.history import record_action
+
+    total = common_pool_count(db, hunt_id=hunt_id, search=search)
+    if total > 5000:
+        # Keep one action and its compensation payload within a practical SQLite row size.
+        raise ValueError(
+            "This selection exceeds 5,000 profiles. Narrow it by Hunt or search text and retry."
+        )
+    profiles = []
+    for offset in range(0, total, 250):
+        profiles.extend(
+            list_common_pool_profiles(
+                db,
+                hunt_id=hunt_id,
+                search=search,
+                offset=offset,
+                limit=250,
+            )
+        )
+    if not profiles:
+        return {
+            "status": "success",
+            "changed": False,
+            "archived": 0,
+            "linked_candidates_preserved": 0,
+        }
+
+    profile_states = []
+    match_states = []
+    linked_candidates = 0
+    for profile in profiles:
+        profile_states.append({"id": profile.id, "status": profile.status})
+        linked_candidates += int(profile.candidate_id is not None)
+        profile.status = ARCHIVED_STATUS
+        for match in profile.hunt_matches or []:
+            match_states.append(
+                {
+                    "id": match.id,
+                    "status": match.status,
+                    "scan_error": match.scan_error,
+                    "rejection_reason": match.rejection_reason,
+                    "approved_at": match.approved_at.isoformat() if match.approved_at else None,
+                    "imported_at": match.imported_at.isoformat() if match.imported_at else None,
+                }
+            )
+            match.status = ARCHIVED_STATUS
+
+    history = record_action(
+        db,
+        action_type="archive_common_pool",
+        summary=f"Archived {len(profiles)} Common Pool profile(s)",
+        payload={
+            "hunt_id": hunt_id,
+            "search": (search or "").strip() or None,
+            "profile_ids": [profile.id for profile in profiles],
+            "linked_candidates_preserved": linked_candidates,
+        },
+        undo_payload={"profiles": profile_states, "matches": match_states},
+        actor_type=actor_type,
+        session_id=session_id,
+    )
+    return {
+        "status": "success",
+        "changed": True,
+        "archived": len(profiles),
+        "linked_candidates_preserved": linked_candidates,
+        "action_id": history.id,
+        "undoable": True,
+        "undo_window_days": 7,
+    }
+
+
 def _find_candidate_for_profile(db: Session, profile: DiscoveredProfile) -> Optional[Candidate]:
     if profile.candidate_id:
         candidate = db.get(Candidate, int(profile.candidate_id))
@@ -426,16 +545,44 @@ def _find_candidate_for_profile(db: Session, profile: DiscoveredProfile) -> Opti
     return None
 
 
-def import_approved_discovery(match_id: int, *, actor_type: str = "recruiter") -> Dict[str, Any]:
+def cancel_discovery_import(match_id: int, stage: str) -> Dict[str, Any]:
+    from app.infrastructure.db import SessionFactory
+
+    message = f"Deep scan cancelled during {stage}. Approval was retained for Retry."
+    with SessionFactory() as db:
+        match = db.get(DiscoveryHuntMatch, int(match_id))
+        if match and match.status != "imported":
+            match.status = "scan_failed"
+            match.scan_error = message
+            db.commit()
+    return {
+        "status": "cancelled",
+        "error": message,
+        "match_id": int(match_id),
+    }
+
+
+def import_approved_discovery(
+    match_id: int,
+    *,
+    actor_type: str = "recruiter",
+    cancel_check: Callable[[], bool] | None = None,
+    before_apply: Callable[[], bool] | None = None,
+) -> Dict[str, Any]:
     """Deep-scan one approved discovery and import it into canonical OS data."""
     from app.infrastructure.db import SessionFactory
 
     import_completed = False
 
+    if cancel_check and cancel_check():
+        return cancel_discovery_import(match_id, "startup")
+
     with SessionFactory() as db:
         match = db.scalar(
             select(DiscoveryHuntMatch)
-            .options(selectinload(DiscoveryHuntMatch.profile), selectinload(DiscoveryHuntMatch.hunt))
+            .options(
+                selectinload(DiscoveryHuntMatch.profile), selectinload(DiscoveryHuntMatch.hunt)
+            )
             .where(DiscoveryHuntMatch.id == int(match_id))
         )
         if not match:
@@ -444,12 +591,13 @@ def import_approved_discovery(match_id: int, *, actor_type: str = "recruiter") -
             return {"status": "error", "error": f"Discovery is {match.status}, not approved"}
         match.status = "enriching"
         match.scan_error = None
-        profile_id = match.profile.id
         hunt_id = match.hunt_id
         url = match.profile.source_url
         db.commit()
 
     try:
+        if cancel_check and cancel_check():
+            return cancel_discovery_import(match_id, "startup")
         from app.browser.page_reader import enrich_profile_from_url
 
         enriched = enrich_profile_from_url(
@@ -461,6 +609,8 @@ def import_approved_discovery(match_id: int, *, actor_type: str = "recruiter") -
         )
         if not enriched or enriched.get("status") != "success" or enriched.get("blocked"):
             raise RuntimeError((enriched or {}).get("error") or "Profile scan failed")
+        if cancel_check and cancel_check():
+            return cancel_discovery_import(match_id, "profile reading")
 
         page_text = (enriched.get("text") or "").strip()
         from app.candidates.profile_extract import extract_profile_from_text, extract_result_to_dict
@@ -477,13 +627,24 @@ def import_approved_discovery(match_id: int, *, actor_type: str = "recruiter") -
                     years = structured_years
             except (TypeError, ValueError):
                 pass
-        location = draft.get("location") or enriched.get("location") or extract_location_from_text(page_text)
+        location = (
+            draft.get("location")
+            or enriched.get("location")
+            or extract_location_from_text(page_text)
+        )
         profile_image_url = enriched.get("profile_image_url") or draft.get("profile_image_url")
+
+        if cancel_check and cancel_check():
+            return cancel_discovery_import(match_id, "profile extraction")
+        if before_apply and not before_apply():
+            return cancel_discovery_import(match_id, "profile extraction")
 
         with SessionFactory() as db:
             match = db.scalar(
                 select(DiscoveryHuntMatch)
-                .options(selectinload(DiscoveryHuntMatch.profile), selectinload(DiscoveryHuntMatch.hunt))
+                .options(
+                    selectinload(DiscoveryHuntMatch.profile), selectinload(DiscoveryHuntMatch.hunt)
+                )
                 .where(DiscoveryHuntMatch.id == int(match_id))
             )
             if not match:
@@ -535,14 +696,19 @@ def import_approved_discovery(match_id: int, *, actor_type: str = "recruiter") -
                 if not candidate.current_title and (
                     draft.get("current_title") or draft.get("headline") or profile.headline
                 ):
-                    candidate.current_title = draft.get("current_title") or draft.get("headline") or profile.headline
+                    candidate.current_title = (
+                        draft.get("current_title") or draft.get("headline") or profile.headline
+                    )
                 if not candidate.current_company and draft.get("current_company"):
                     candidate.current_company = draft["current_company"]
                 if not candidate.pronouns and draft.get("pronouns"):
                     candidate.pronouns = draft["pronouns"]
                 if not candidate.connection_degree and draft.get("connection_degree"):
                     candidate.connection_degree = draft["connection_degree"]
-                if candidate.connections_count is None and draft.get("connections_count") is not None:
+                if (
+                    candidate.connections_count is None
+                    and draft.get("connections_count") is not None
+                ):
                     candidate.connections_count = draft["connections_count"]
                 if not candidate.profile_image_url and profile_image_url:
                     candidate.profile_image_url = profile_image_url
@@ -604,10 +770,12 @@ def import_approved_discovery(match_id: int, *, actor_type: str = "recruiter") -
             from app.hunts.models import HuntCandidate
             from app.hunts.pipeline import add_candidate_to_hunt
 
-            enrollment = db.scalar(select(HuntCandidate).where(
-                HuntCandidate.hunt_id == hunt_id,
-                HuntCandidate.candidate_id == candidate.id,
-            ))
+            enrollment = db.scalar(
+                select(HuntCandidate).where(
+                    HuntCandidate.hunt_id == hunt_id,
+                    HuntCandidate.candidate_id == candidate.id,
+                )
+            )
             created_enrollment = enrollment is None
             if enrollment is None:
                 enrollment = add_candidate_to_hunt(
@@ -659,7 +827,11 @@ def import_approved_discovery(match_id: int, *, actor_type: str = "recruiter") -
                     action_type="approve_discovered_profile",
                     summary=f"Approved and imported {candidate.full_name} into {match.hunt.title}",
                     actor_type=actor_type,
-                    payload={"match_id": match.id, "candidate_id": candidate.id, "hunt_id": hunt_id},
+                    payload={
+                        "match_id": match.id,
+                        "candidate_id": candidate.id,
+                        "hunt_id": hunt_id,
+                    },
                     undo_payload={
                         "match_id": match.id,
                         "profile_id": profile.id,
@@ -677,7 +849,9 @@ def import_approved_discovery(match_id: int, *, actor_type: str = "recruiter") -
                     candidate.id,
                 )
                 action_id = None
-                warning = f"Imported successfully, but undo history could not be recorded: {action_exc}"
+                warning = (
+                    f"Imported successfully, but undo history could not be recorded: {action_exc}"
+                )
             return {
                 "status": "success",
                 "candidate_id": candidate.id,

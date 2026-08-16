@@ -100,7 +100,7 @@ class CandidateProfile(Base):
 
 
 class DiscoveredProfile(Base):
-    """Permanent common-pool identity found during lightweight sourcing."""
+    """Retained common-pool identity found during lightweight sourcing."""
     __tablename__ = "discovered_profiles"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

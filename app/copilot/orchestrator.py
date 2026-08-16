@@ -54,7 +54,7 @@ def execute_action_node(state: CopilotState) -> Dict[str, Any]:
         tool_out = start_talent_hunt.invoke({"job_title": query or "Software Engineer", "skills": "Python, AI"})
         return {"response": f"I've initiated a new talent hunt based on your request:\n```json\n{tool_out}\n```"}
     elif intent == "search_candidates":
-        tool_out = search_candidates.invoke({"query": query or "Python Developer", "limit": 3})
+        tool_out = search_candidates.invoke({"query": query or "Python Developer", "top_k": 3})
         return {"response": f"Here are the matching candidates from our database:\n```json\n{tool_out}\n```"}
     elif intent == "message_candidate":
         tool_out = message_candidate.invoke({"candidate_id": "cand_101", "message": query})
@@ -91,3 +91,4 @@ def create_copilot_graph():
     return workflow.compile()
 
 copilot_graph = create_copilot_graph()
+copilot = copilot_graph

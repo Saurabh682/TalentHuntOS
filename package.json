@@ -1,0 +1,11 @@
+{
+  "name": "talenthunt-os-local-ui-audits",
+  "private": true,
+  "description": "Local-only frontend audit dependency for TalentHunt OS",
+  "scripts": {
+    "audit:a11y": ".venv\\Scripts\\python.exe scripts/accessibility_audit.py"
+  },
+  "devDependencies": {
+    "axe-core": "4.13.0"
+  }
+}

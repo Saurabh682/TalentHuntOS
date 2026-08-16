@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -53,8 +54,7 @@ def _candidate_payload(candidate) -> dict[str, Any]:
         "highlights": highlights,
         "tags": [tag.tag_name for tag in candidate.tags or []],
         "tag_records": [
-            {"id": tag.id, "name": tag.tag_name, "color": tag.color}
-            for tag in candidate.tags or []
+            {"id": tag.id, "name": tag.tag_name, "color": tag.color} for tag in candidate.tags or []
         ],
         "notes": [
             {
@@ -110,8 +110,7 @@ def _candidate_summary(candidate) -> dict[str, Any]:
         "linkedin_url": candidate.linkedin_url,
         "skills": _json_list(profile.skills_json) if profile else [],
         "tags": [
-            {"id": tag.id, "name": tag.tag_name, "color": tag.color}
-            for tag in candidate.tags or []
+            {"id": tag.id, "name": tag.tag_name, "color": tag.color} for tag in candidate.tags or []
         ],
     }
 
@@ -373,6 +372,17 @@ class CommonPoolListInput(BaseModel):
     limit: int = Field(default=50, ge=1, le=100)
 
 
+class CommonPoolArchiveInput(BaseModel):
+    hunt_id: int | None = Field(default=None, gt=0)
+    search: str | None = Field(default=None, max_length=200)
+
+    @field_validator("search")
+    @classmethod
+    def clean_pool_search(cls, value: str | None) -> str | None:
+        cleaned = (value or "").strip()
+        return cleaned or None
+
+
 class CandidateUpdateInput(BaseModel):
     candidate_id: int = Field(gt=0)
     full_name: str | None = Field(default=None, max_length=120)
@@ -490,7 +500,9 @@ class HuntCreateInput(BaseModel):
     experience: str | None = Field(default=None, max_length=100)
     industry: str | None = Field(default=None, max_length=100)
     remote_policy: str | None = Field(default=None, max_length=50)
-    target_platforms: list[str] = Field(default_factory=lambda: ["linkedin", "naukri"], max_length=20)
+    target_platforms: list[str] = Field(
+        default_factory=lambda: ["linkedin", "naukri"], max_length=20
+    )
     status: str = "Active"
 
     @field_validator("title")
@@ -539,12 +551,63 @@ class HuntStatusInput(BaseModel):
         aliases = {"Pause": "Paused", "Resume": "Active"}
         normalized = aliases.get(value.strip().title(), value.strip().title())
         if normalized not in {"Active", "Paused", "Draft", "Completed"}:
-            raise ValueError("status must be Active, Paused, Draft, or Completed; use archive for Archived")
+            raise ValueError(
+                "status must be Active, Paused, Draft, or Completed; use archive for Archived"
+            )
         return normalized
 
 
 class HuntArchiveInput(BaseModel):
     hunt_id: int = Field(gt=0)
+
+
+class PlaybookListInput(BaseModel):
+    entry_type: str | None = Field(default=None, max_length=20)
+    role: str | None = Field(default=None, max_length=150)
+    platform: str | None = Field(default=None, max_length=50)
+    search: str | None = Field(default=None, max_length=200)
+    limit: int = Field(default=50, ge=1, le=150)
+
+
+class PlaybookInsightAddInput(BaseModel):
+    worked: bool
+    note: str = Field(min_length=1, max_length=5000)
+    role_context: str | None = Field(default=None, max_length=150)
+    platform: str | None = Field(default=None, max_length=50)
+    query_text: str | None = Field(default=None, max_length=5000)
+    hunt_id: int | None = Field(default=None, gt=0)
+    author_name: str = Field(default="Recruiter", min_length=1, max_length=80)
+
+    @field_validator("note", "author_name")
+    @classmethod
+    def clean_required_playbook_text(cls, value: str) -> str:
+        return value.strip()
+
+
+class IntakeRequestCreateInput(BaseModel):
+    candidate_id: int = Field(gt=0)
+    hunt_id: int | None = Field(default=None, gt=0)
+    expires_in_days: int = Field(default=14, ge=1, le=90)
+
+
+class IntakeSubmissionListInput(BaseModel):
+    candidate_id: int | None = Field(default=None, gt=0)
+    limit: int = Field(default=50, ge=1, le=100)
+
+
+class IntakeSubmissionReviewInput(BaseModel):
+    submission_id: int = Field(gt=0)
+    accept: bool = True
+    mode: str = "merge"
+    profile_payload: dict[str, Any] | None = None
+
+    @field_validator("mode")
+    @classmethod
+    def valid_intake_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"merge", "replace"}:
+            raise ValueError("mode must be merge or replace")
+        return normalized
 
 
 class ActionUndoInput(BaseModel):
@@ -565,7 +628,15 @@ class ActionUndoInput(BaseModel):
         raise ValueError("action_id must be a positive ID or 'latest'")
 
 
-class JobRetryInput(BaseModel):
+class AnalyticsScopeInput(BaseModel):
+    hunt_id: int | None = Field(default=None, gt=0)
+
+
+class AnalyticsTrendInput(AnalyticsScopeInput):
+    days: int = Field(default=30, ge=1, le=365)
+
+
+class JobIdInput(BaseModel):
     job_id: str = Field(min_length=6, max_length=32)
 
     @field_validator("job_id")
@@ -577,6 +648,90 @@ class JobRetryInput(BaseModel):
         return normalized
 
 
+class JobRetryInput(JobIdInput):
+    pass
+
+
+class JobCancelInput(JobIdInput):
+    pass
+
+
+class JobListInput(BaseModel):
+    status: str = "all"
+    kind: str | None = Field(default=None, max_length=60)
+    hunt_id: int | None = Field(default=None, gt=0)
+    limit: int = Field(default=20, ge=1, le=100)
+
+    @field_validator("status")
+    @classmethod
+    def valid_job_status(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        allowed = {
+            "all",
+            "active",
+            "retryable",
+            "running",
+            "done",
+            "cancelled",
+            "error",
+            "interrupted",
+        }
+        if normalized not in allowed:
+            raise ValueError(f"status must be one of: {', '.join(sorted(allowed))}")
+        return normalized
+
+    @field_validator("kind")
+    @classmethod
+    def valid_job_kind(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().lower()
+        if not normalized or any(
+            ch not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for ch in normalized
+        ):
+            raise ValueError("kind may contain only letters, numbers, underscores, and hyphens")
+        return normalized
+
+
+def _analytics_scope(db, hunt_id: int | None) -> dict[str, Any]:
+    if hunt_id is None:
+        return {"type": "all_hunts", "hunt_id": None, "hunt_title": None}
+    from app.hunts.models import TalentHunt
+
+    hunt = db.get(TalentHunt, hunt_id)
+    if not hunt:
+        raise ValueError("Talent Hunt not found.")
+    return {"type": "hunt", "hunt_id": hunt.id, "hunt_title": hunt.title}
+
+
+def _analytics_result(
+    *,
+    metric: str,
+    service: str,
+    scope: dict[str, Any],
+    data: dict[str, Any],
+    tables: list[str],
+    filters: dict[str, Any] | None = None,
+    limitations: list[str] | None = None,
+) -> dict[str, Any]:
+    if not isinstance(data, dict) or not data:
+        raise RuntimeError(f"{metric.replace('_', ' ').title()} analytics could not be calculated.")
+    return {
+        "status": "success",
+        "metric": metric,
+        "scope": scope,
+        "data": data,
+        "provenance": {
+            "source_of_truth": "canonical TalentHunt database records",
+            "service": service,
+            "tables": tables,
+            "filters": filters or {"hunt_id": scope["hunt_id"]},
+            "calculated_at": datetime.now(timezone.utc).isoformat(),
+            "limitations": limitations or [],
+        },
+    }
+
+
 def _undo_resources(data: ActionUndoInput, ctx: ActionContext) -> list[str]:
     from app.actions.history import action_resource_keys, get_undoable_action
     from app.infrastructure.db import SessionFactory
@@ -586,10 +741,17 @@ def _undo_resources(data: ActionUndoInput, ctx: ActionContext) -> list[str]:
 
 
 def _candidate_resources(
-    data: CandidateUpdateInput | CandidateArchiveInput | CandidateTagAddInput
-    | CandidateTagRemoveInput | CandidateNoteAddInput | CandidateExperienceSaveInput
-    | CandidateExperienceRemoveInput | CandidateEducationSaveInput
-    | CandidateEducationRemoveInput | CandidateProfileApplyInput | CandidateRogueSetInput,
+    data: CandidateUpdateInput
+    | CandidateArchiveInput
+    | CandidateTagAddInput
+    | CandidateTagRemoveInput
+    | CandidateNoteAddInput
+    | CandidateExperienceSaveInput
+    | CandidateExperienceRemoveInput
+    | CandidateEducationSaveInput
+    | CandidateEducationRemoveInput
+    | CandidateProfileApplyInput
+    | CandidateRogueSetInput,
     ctx: ActionContext,
 ) -> list[str]:
     return [f"candidate:{data.candidate_id}"]
@@ -669,6 +831,59 @@ def _discovery_resources(data: DiscoveryDecisionInput, ctx: ActionContext) -> li
         return resources
 
 
+def _common_pool_archive_resources(
+    data: CommonPoolArchiveInput,
+    ctx: ActionContext,
+) -> list[str]:
+    resources = ["discoveries:common-pool"]
+    if data.hunt_id:
+        resources.append(f"hunt:{data.hunt_id}")
+    return resources
+
+
+def _preview_common_pool_archive(
+    data: CommonPoolArchiveInput,
+    ctx: ActionContext,
+) -> dict[str, Any]:
+    from app.candidates.discovery import (
+        common_pool_count,
+        common_pool_linked_candidate_count,
+        list_common_pool_profiles,
+    )
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        total = common_pool_count(db, hunt_id=data.hunt_id, search=data.search)
+        if not total:
+            raise ValueError("No visible Common Pool profiles match this selection.")
+        linked = common_pool_linked_candidate_count(
+            db,
+            hunt_id=data.hunt_id,
+            search=data.search,
+        )
+        sample = list_common_pool_profiles(
+            db,
+            hunt_id=data.hunt_id,
+            search=data.search,
+            limit=10,
+        )
+        return {
+            "title": "Archive Discoveries Common Pool",
+            "summary": (
+                f"Archive {total} matching Common Pool profile(s). "
+                f"{linked} linked canonical Candidate record(s) will be preserved."
+            ),
+            "profile_count": total,
+            "linked_candidates_preserved": linked,
+            "hunt_id": data.hunt_id,
+            "search": data.search,
+            "sample_names": [profile.full_name or "Unknown candidate" for profile in sample],
+            "reversible": True,
+            "undo_window_days": 7,
+            "affected_resources": _common_pool_archive_resources(data, ctx),
+        }
+
+
 def _pipeline_resources(
     data: PipelineMoveInput | PipelineRemoveInput | PipelineTriageInput,
     ctx: ActionContext,
@@ -697,9 +912,9 @@ def _pipeline_enroll_resources(data: PipelineEnrollInput, ctx: ActionContext) ->
     resources = {f"candidate:{data.candidate_id}", f"hunt:{data.hunt_id}"}
     if data.move_from_other_hunts:
         with SessionFactory() as db:
-            for hunt_id in db.scalars(select(HuntCandidate.hunt_id).where(
-                HuntCandidate.candidate_id == data.candidate_id
-            )).all():
+            for hunt_id in db.scalars(
+                select(HuntCandidate.hunt_id).where(HuntCandidate.candidate_id == data.candidate_id)
+            ).all():
                 resources.add(f"hunt:{hunt_id}")
     return sorted(resources)
 
@@ -708,10 +923,25 @@ def _pipeline_row_snapshot(row) -> dict[str, Any]:
     return {
         key: getattr(row, key)
         for key in (
-            "id", "hunt_id", "candidate_id", "stage_id", "full_name", "email", "phone",
-            "current_title", "current_company", "location", "linkedin_url", "github_url",
-            "portfolio_url", "match_score", "ai_summary", "notes", "source_platform",
-            "source_query", "status",
+            "id",
+            "hunt_id",
+            "candidate_id",
+            "stage_id",
+            "full_name",
+            "email",
+            "phone",
+            "current_title",
+            "current_company",
+            "location",
+            "linkedin_url",
+            "github_url",
+            "portfolio_url",
+            "match_score",
+            "ai_summary",
+            "notes",
+            "source_platform",
+            "source_query",
+            "status",
         )
     } | {
         "created_at": row.created_at.isoformat() if row.created_at else None,
@@ -737,6 +967,39 @@ def _hunt_create_resources(data: HuntCreateInput, ctx: ActionContext) -> list[st
     return ["hunts:create"]
 
 
+def _playbook_insight_resources(data: PlaybookInsightAddInput, ctx: ActionContext) -> list[str]:
+    return [f"hunt:{data.hunt_id}"] if data.hunt_id else ["playbook:global"]
+
+
+def _intake_request_resources(data: IntakeRequestCreateInput, ctx: ActionContext) -> list[str]:
+    resources = [f"candidate:{data.candidate_id}"]
+    if data.hunt_id:
+        resources.append(f"hunt:{data.hunt_id}")
+    return resources
+
+
+def _intake_submission_resources(
+    data: IntakeSubmissionReviewInput, ctx: ActionContext
+) -> list[str]:
+    from app.candidates.models import CandidateIntakeRequest, CandidateIntakeSubmission
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        submission = db.get(CandidateIntakeSubmission, data.submission_id)
+        if not submission:
+            return [f"intake-submission:{data.submission_id}"]
+        request = db.get(CandidateIntakeRequest, submission.request_id)
+        resources = [
+            f"intake-submission:{submission.id}",
+            f"intake-request:{submission.request_id}",
+        ]
+        if request:
+            resources.append(f"candidate:{request.candidate_id}")
+            if request.hunt_id:
+                resources.append(f"hunt:{request.hunt_id}")
+        return resources
+
+
 def _hunt_payload(hunt) -> dict[str, Any]:
     config = hunt.search_config
     return {
@@ -749,7 +1012,9 @@ def _hunt_payload(hunt) -> dict[str, Any]:
         "salary_range": hunt.salary_range,
         "created_at": hunt.created_at.isoformat() if hunt.created_at else None,
         "updated_at": hunt.updated_at.isoformat() if hunt.updated_at else None,
-        "search_config": None if not config else {
+        "search_config": None
+        if not config
+        else {
             "id": config.id,
             "keywords": config.keywords,
             "required_skills": config.required_skills,
@@ -763,8 +1028,11 @@ def _hunt_payload(hunt) -> dict[str, Any]:
         },
         "stages": [
             {
-                "id": stage.id, "name": stage.name, "position": stage.position,
-                "color": stage.color, "is_terminal": stage.is_terminal,
+                "id": stage.id,
+                "name": stage.name,
+                "position": stage.position,
+                "color": stage.color,
+                "is_terminal": stage.is_terminal,
             }
             for stage in hunt.stages or []
         ],
@@ -779,6 +1047,13 @@ def _job_retry_resources(data: JobRetryInput, ctx: ActionContext) -> list[str]:
     resources = [f"job:{data.job_id}"]
     if original["kind"] == "sourcing":
         resources.append("job:sourcing")
+    if original["kind"] in {"embedded_ai_install", "embedded_ai_start"}:
+        resources.append("ai-runtime:embedded")
+    platform = original.get("payload", {}).get("platform")
+    if platform:
+        resources.append(f"site:{platform}")
+        if original["kind"] == "site_connect":
+            resources.append("browser:interactive-login")
     if original.get("hunt_id"):
         resources.append(f"hunt:{original['hunt_id']}")
     match_id = original.get("payload", {}).get("match_id")
@@ -787,8 +1062,71 @@ def _job_retry_resources(data: JobRetryInput, ctx: ActionContext) -> list[str]:
     return resources
 
 
+def _job_control_resources(data: JobCancelInput, ctx: ActionContext) -> list[str]:
+    from app.jobs import service as jobs
+
+    row = jobs.get_job_row(data.job_id)
+    if not row:
+        raise ValueError("Background job not found.")
+    resources = [f"job:{data.job_id}"]
+    if row.kind == "sourcing":
+        resources.append("job:sourcing")
+    if row.kind in {"embedded_ai_install", "embedded_ai_start"}:
+        resources.append("ai-runtime:embedded")
+    if row.hunt_id:
+        resources.append(f"hunt:{row.hunt_id}")
+    match_id = jobs.serialize_job(row).get("payload", {}).get("match_id")
+    if match_id:
+        resources.append(f"discovery-match:{int(match_id)}")
+    platform = jobs.serialize_job(row).get("payload", {}).get("platform")
+    if platform:
+        resources.append(f"site:{platform}")
+    return resources
+
+
+def _job_payload(row) -> dict[str, Any]:
+    from app.jobs.service import serialize_job
+
+    item = serialize_job(row)
+    phase = str(item.get("phase") or "").strip().lower() or None
+    cancellable = (
+        item["status"] == "running"
+        and item["kind"] in {"sourcing", "profile_enrichment", "site_connect", "site_verify"}
+        and not (item["kind"] == "profile_enrichment" and phase == "applying")
+    )
+    return {
+        "id": item["id"],
+        "kind": item["kind"],
+        "status": item["status"],
+        "hunt_id": item.get("hunt_id"),
+        "hunt_title": item.get("hunt_title"),
+        "label": item["label"],
+        "message": item["message"],
+        "phase": phase,
+        "platform": item.get("platform") or item.get("payload", {}).get("platform"),
+        "window_open": bool(item.get("window_open")),
+        "ready_for_save": bool(item.get("ready_for_save")),
+        "browser_channel": item.get("browser_channel"),
+        "scanned": item["scanned"],
+        "added": item["added"],
+        "skipped": item["skipped"],
+        "attempt": item["attempt"],
+        "parent_job_id": item.get("parent_job_id"),
+        "retryable": bool(
+            item["retryable"] and item["status"] in {"cancelled", "error", "interrupted"}
+        ),
+        "cancellable": cancellable,
+        "started_at": item.get("started_at"),
+        "heartbeat_at": item.get("heartbeat_at"),
+        "finished_at": item.get("finished_at"),
+        "elapsed_sec": item["elapsed_sec"],
+        "error": item.get("error"),
+    }
+
+
 def _preview_hunt_archive(data: HuntArchiveInput, ctx: ActionContext) -> dict[str, Any]:
     from sqlalchemy import func
+
     from app.hunts.models import HuntCandidate, TalentHunt
     from app.infrastructure.db import SessionFactory
 
@@ -798,11 +1136,14 @@ def _preview_hunt_archive(data: HuntArchiveInput, ctx: ActionContext) -> dict[st
             raise ValueError("Hunt not found.")
         if hunt.status == "Archived":
             raise ValueError("Hunt is already archived.")
-        count = int(db.scalar(
-            select(func.count()).select_from(HuntCandidate).where(
-                HuntCandidate.hunt_id == hunt.id
+        count = int(
+            db.scalar(
+                select(func.count())
+                .select_from(HuntCandidate)
+                .where(HuntCandidate.hunt_id == hunt.id)
             )
-        ) or 0)
+            or 0
+        )
         return {
             "title": "Archive Talent Hunt",
             "summary": f"Archive '{hunt.title}' and hide it from active views.",
@@ -885,7 +1226,12 @@ def list_candidates_action(data: CandidateListInput, ctx: ActionContext) -> dict
 def create_candidate_action(data: CandidateCreateInput, ctx: ActionContext) -> dict[str, Any]:
     from app.actions.history import record_action
     from app.candidates.duplicates import find_candidate_identity_conflict
-    from app.candidates.service import create_candidate, delete_candidate, get_candidate, serialize_candidate_profile_state
+    from app.candidates.service import (
+        create_candidate,
+        delete_candidate,
+        get_candidate,
+        serialize_candidate_profile_state,
+    )
     from app.hunts.models import TalentHunt
     from app.hunts.pipeline import add_candidate_to_hunt
     from app.infrastructure.db import SessionFactory
@@ -973,7 +1319,9 @@ def create_candidate_action(data: CandidateCreateInput, ctx: ActionContext) -> d
                     "initial_state": initial_state,
                     "initial_tag_ids": [tag.id for tag in candidate.tags or []],
                     "hunt_candidate_id": hunt_candidate.id if hunt_candidate else None,
-                    "hunt_activity_ids": [row.id for row in (hunt_candidate.activities or [])] if hunt_candidate else [],
+                    "hunt_activity_ids": [row.id for row in (hunt_candidate.activities or [])]
+                    if hunt_candidate
+                    else [],
                 },
             )
         except Exception:
@@ -1023,7 +1371,9 @@ def get_candidate_action(data: CandidateGetInput, ctx: ActionContext) -> dict[st
     copilot_enabled=True,
     copilot_tool_name="find_candidate_duplicates",
 )
-def list_candidate_duplicates_action(data: CandidateDuplicateListInput, ctx: ActionContext) -> dict[str, Any]:
+def list_candidate_duplicates_action(
+    data: CandidateDuplicateListInput, ctx: ActionContext
+) -> dict[str, Any]:
     from app.candidates.duplicates import find_candidate_duplicates
     from app.infrastructure.db import SessionFactory
 
@@ -1146,10 +1496,12 @@ def add_candidate_tag_action(data: CandidateTagAddInput, ctx: ActionContext) -> 
         candidate = get_candidate(db, data.candidate_id)
         if not candidate:
             raise ValueError("Candidate not found.")
-        existing = db.scalar(select(CandidateTag).where(
-            CandidateTag.candidate_id == data.candidate_id,
-            CandidateTag.tag_name.ilike(data.tag_name),
-        ))
+        existing = db.scalar(
+            select(CandidateTag).where(
+                CandidateTag.candidate_id == data.candidate_id,
+                CandidateTag.tag_name.ilike(data.tag_name),
+            )
+        )
         if existing:
             return {"status": "success", "changed": False, "tag_id": existing.id}
         tag = add_candidate_tag(db, data.candidate_id, data.tag_name, data.color)
@@ -1164,7 +1516,13 @@ def add_candidate_tag_action(data: CandidateTagAddInput, ctx: ActionContext) -> 
             payload={"candidate_id": candidate.id, "tag_id": tag.id, "tag_name": tag.tag_name},
             undo_payload={"candidate_id": candidate.id, "tag_id": tag.id},
         )
-        return {"status": "success", "changed": True, "tag_id": tag.id, "action_id": history.id, "undoable": True}
+        return {
+            "status": "success",
+            "changed": True,
+            "tag_id": tag.id,
+            "action_id": history.id,
+            "undoable": True,
+        }
 
 
 @register_action(
@@ -1178,7 +1536,9 @@ def add_candidate_tag_action(data: CandidateTagAddInput, ctx: ActionContext) -> 
     copilot_enabled=True,
     copilot_tool_name="remove_candidate_tag",
 )
-def remove_candidate_tag_action(data: CandidateTagRemoveInput, ctx: ActionContext) -> dict[str, Any]:
+def remove_candidate_tag_action(
+    data: CandidateTagRemoveInput, ctx: ActionContext
+) -> dict[str, Any]:
     from app.actions.history import record_action
     from app.candidates.models import CandidateTag
     from app.candidates.service import get_candidate, remove_candidate_tag
@@ -1188,10 +1548,12 @@ def remove_candidate_tag_action(data: CandidateTagRemoveInput, ctx: ActionContex
         candidate = get_candidate(db, data.candidate_id)
         if not candidate:
             raise ValueError("Candidate not found.")
-        tag = db.scalar(select(CandidateTag).where(
-            CandidateTag.id == data.tag_id,
-            CandidateTag.candidate_id == data.candidate_id,
-        ))
+        tag = db.scalar(
+            select(CandidateTag).where(
+                CandidateTag.id == data.tag_id,
+                CandidateTag.candidate_id == data.candidate_id,
+            )
+        )
         if not tag:
             raise ValueError("Candidate tag not found.")
         previous = {"candidate_id": candidate.id, "tag_name": tag.tag_name, "color": tag.color}
@@ -1241,7 +1603,13 @@ def add_candidate_note_action(data: CandidateNoteAddInput, ctx: ActionContext) -
             payload={"candidate_id": candidate.id, "note_id": note.id},
             undo_payload={"candidate_id": candidate.id, "note_id": note.id},
         )
-        return {"status": "success", "changed": True, "note_id": note.id, "action_id": history.id, "undoable": True}
+        return {
+            "status": "success",
+            "changed": True,
+            "note_id": note.id,
+            "action_id": history.id,
+            "undoable": True,
+        }
 
 
 @register_action(
@@ -1255,9 +1623,15 @@ def add_candidate_note_action(data: CandidateNoteAddInput, ctx: ActionContext) -
     copilot_enabled=True,
     copilot_tool_name="save_candidate_experience",
 )
-def save_candidate_experience_action(data: CandidateExperienceSaveInput, ctx: ActionContext) -> dict[str, Any]:
+def save_candidate_experience_action(
+    data: CandidateExperienceSaveInput, ctx: ActionContext
+) -> dict[str, Any]:
     from app.candidates.models import CandidateExperience
-    from app.candidates.service import _reindex_candidate, get_candidate, serialize_candidate_profile_state
+    from app.candidates.service import (
+        _reindex_candidate,
+        get_candidate,
+        serialize_candidate_profile_state,
+    )
     from app.infrastructure.db import SessionFactory
 
     with SessionFactory() as db:
@@ -1270,7 +1644,9 @@ def save_candidate_experience_action(data: CandidateExperienceSaveInput, ctx: Ac
             raise ValueError("Candidate experience not found.")
         created = row is None
         if row is None:
-            row = CandidateExperience(candidate_id=candidate.id, company=data.company, title=data.title)
+            row = CandidateExperience(
+                candidate_id=candidate.id, company=data.company, title=data.title
+            )
             db.add(row)
         values = data.model_dump(exclude={"candidate_id", "experience_id", "skills"})
         for field, value in values.items():
@@ -1287,8 +1663,11 @@ def save_candidate_experience_action(data: CandidateExperienceSaveInput, ctx: Ac
         )
         _reindex_candidate(db, get_candidate(db, candidate.id))
         return {
-            "status": "success", "changed": True, "experience_id": row.id,
-            "action_id": history.id, "undoable": True,
+            "status": "success",
+            "changed": True,
+            "experience_id": row.id,
+            "action_id": history.id,
+            "undoable": True,
         }
 
 
@@ -1303,9 +1682,15 @@ def save_candidate_experience_action(data: CandidateExperienceSaveInput, ctx: Ac
     copilot_enabled=True,
     copilot_tool_name="remove_candidate_experience",
 )
-def remove_candidate_experience_action(data: CandidateExperienceRemoveInput, ctx: ActionContext) -> dict[str, Any]:
+def remove_candidate_experience_action(
+    data: CandidateExperienceRemoveInput, ctx: ActionContext
+) -> dict[str, Any]:
     from app.candidates.models import CandidateExperience
-    from app.candidates.service import _reindex_candidate, get_candidate, serialize_candidate_profile_state
+    from app.candidates.service import (
+        _reindex_candidate,
+        get_candidate,
+        serialize_candidate_profile_state,
+    )
     from app.infrastructure.db import SessionFactory
 
     with SessionFactory() as db:
@@ -1342,7 +1727,9 @@ def remove_candidate_experience_action(data: CandidateExperienceRemoveInput, ctx
     copilot_enabled=True,
     copilot_tool_name="save_candidate_education",
 )
-def save_candidate_education_action(data: CandidateEducationSaveInput, ctx: ActionContext) -> dict[str, Any]:
+def save_candidate_education_action(
+    data: CandidateEducationSaveInput, ctx: ActionContext
+) -> dict[str, Any]:
     from app.candidates.models import CandidateEducation
     from app.candidates.service import get_candidate, serialize_candidate_profile_state
     from app.infrastructure.db import SessionFactory
@@ -1371,8 +1758,11 @@ def save_candidate_education_action(data: CandidateEducationSaveInput, ctx: Acti
             ctx=ctx,
         )
         return {
-            "status": "success", "changed": True, "education_id": row.id,
-            "action_id": history.id, "undoable": True,
+            "status": "success",
+            "changed": True,
+            "education_id": row.id,
+            "action_id": history.id,
+            "undoable": True,
         }
 
 
@@ -1387,7 +1777,9 @@ def save_candidate_education_action(data: CandidateEducationSaveInput, ctx: Acti
     copilot_enabled=True,
     copilot_tool_name="remove_candidate_education",
 )
-def remove_candidate_education_action(data: CandidateEducationRemoveInput, ctx: ActionContext) -> dict[str, Any]:
+def remove_candidate_education_action(
+    data: CandidateEducationRemoveInput, ctx: ActionContext
+) -> dict[str, Any]:
     from app.candidates.models import CandidateEducation
     from app.candidates.service import get_candidate, serialize_candidate_profile_state
     from app.infrastructure.db import SessionFactory
@@ -1424,7 +1816,9 @@ def remove_candidate_education_action(data: CandidateEducationRemoveInput, ctx: 
     copilot_enabled=True,
     copilot_tool_name="apply_candidate_profile_sections",
 )
-def apply_candidate_profile_action(data: CandidateProfileApplyInput, ctx: ActionContext) -> dict[str, Any]:
+def apply_candidate_profile_action(
+    data: CandidateProfileApplyInput, ctx: ActionContext
+) -> dict[str, Any]:
     from app.candidates.service import (
         get_candidate,
         replace_or_merge_profile_sections,
@@ -1462,8 +1856,11 @@ def apply_candidate_profile_action(data: CandidateProfileApplyInput, ctx: Action
             ctx=ctx,
         )
         return {
-            "status": "success", "changed": True, "candidate": _candidate_payload(get_candidate(db, data.candidate_id)),
-            "action_id": history.id, "undoable": True,
+            "status": "success",
+            "changed": True,
+            "candidate": _candidate_payload(get_candidate(db, data.candidate_id)),
+            "action_id": history.id,
+            "undoable": True,
         }
 
 
@@ -1489,12 +1886,21 @@ def set_candidate_rogue_action(data: CandidateRogueSetInput, ctx: ActionContext)
         candidate = get_candidate(db, data.candidate_id)
         if not candidate:
             raise ValueError("Candidate not found.")
-        tags = list(db.scalars(select(CandidateTag).where(
-            CandidateTag.candidate_id == candidate.id,
-            CandidateTag.tag_name == ROGUE_TAG,
-        )).all())
+        tags = list(
+            db.scalars(
+                select(CandidateTag).where(
+                    CandidateTag.candidate_id == candidate.id,
+                    CandidateTag.tag_name == ROGUE_TAG,
+                )
+            ).all()
+        )
         if bool(tags) == data.enabled:
-            return {"status": "success", "changed": False, "candidate_id": candidate.id, "rogue": data.enabled}
+            return {
+                "status": "success",
+                "changed": False,
+                "candidate_id": candidate.id,
+                "rogue": data.enabled,
+            }
         previous_tags = [{"tag_name": tag.tag_name, "color": tag.color} for tag in tags]
         playbook_entry_id = None
         if data.enabled:
@@ -1523,17 +1929,23 @@ def set_candidate_rogue_action(data: CandidateRogueSetInput, ctx: ActionContext)
         except Exception:
             from app.hunts.models import PlaybookEntry
 
-            for tag in list(db.scalars(select(CandidateTag).where(
-                CandidateTag.candidate_id == candidate.id,
-                CandidateTag.tag_name == ROGUE_TAG,
-            )).all()):
+            for tag in list(
+                db.scalars(
+                    select(CandidateTag).where(
+                        CandidateTag.candidate_id == candidate.id,
+                        CandidateTag.tag_name == ROGUE_TAG,
+                    )
+                ).all()
+            ):
                 db.delete(tag)
             for tag in previous_tags:
-                db.add(CandidateTag(
-                    candidate_id=candidate.id,
-                    tag_name=tag["tag_name"],
-                    color=tag.get("color"),
-                ))
+                db.add(
+                    CandidateTag(
+                        candidate_id=candidate.id,
+                        tag_name=tag["tag_name"],
+                        color=tag.get("color"),
+                    )
+                )
             if playbook_entry_id:
                 entry = db.get(PlaybookEntry, int(playbook_entry_id))
                 if entry:
@@ -1541,8 +1953,12 @@ def set_candidate_rogue_action(data: CandidateRogueSetInput, ctx: ActionContext)
             db.commit()
             raise
         return {
-            "status": "success", "changed": True, "candidate_id": candidate.id,
-            "rogue": data.enabled, "action_id": history.id, "undoable": True,
+            "status": "success",
+            "changed": True,
+            "candidate_id": candidate.id,
+            "rogue": data.enabled,
+            "action_id": history.id,
+            "undoable": True,
         }
 
 
@@ -1671,7 +2087,7 @@ def get_discovery_action(data: DiscoveryGetInput, ctx: ActionContext) -> dict[st
 
 @register_action(
     "discoveries.common_pool.list",
-    description="Search the permanent Common Pool, including filtered and rejected identities.",
+    description="Search the retained Common Pool, including filtered and rejected identities.",
     input_model=CommonPoolListInput,
     classification="query",
     risk_level="R0",
@@ -1699,6 +2115,40 @@ def list_common_pool_action(data: CommonPoolListInput, ctx: ActionContext) -> di
             "limit": data.limit,
             "profiles": [_common_pool_payload(profile) for profile in profiles],
         }
+
+
+@register_action(
+    "discoveries.common_pool.archive",
+    description=(
+        "Archive, clear, or delete matching profiles from the Discoveries Common Pool only. "
+        "Canonical Candidate records are preserved. This creates a trusted confirmation preview "
+        "and can be undone for seven days. Omit Hunt and search to archive the whole visible pool."
+    ),
+    preview_handler=_preview_common_pool_archive,
+    input_model=CommonPoolArchiveInput,
+    resource_resolver=_common_pool_archive_resources,
+    requires_approval=True,
+    classification="mutation",
+    risk_level="R3",
+    required_scopes=("write",),
+    copilot_enabled=True,
+    copilot_tool_name="archive_discoveries_common_pool",
+)
+def archive_common_pool_action(
+    data: CommonPoolArchiveInput,
+    ctx: ActionContext,
+) -> dict[str, Any]:
+    from app.candidates.discovery import archive_common_pool_profiles
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        return archive_common_pool_profiles(
+            db,
+            hunt_id=data.hunt_id,
+            search=data.search,
+            actor_type=_history_actor(ctx),
+            session_id=ctx.session_id,
+        )
 
 
 @register_action(
@@ -1942,49 +2392,71 @@ def enroll_pipeline_action(data: PipelineEnrollInput, ctx: ActionContext) -> dic
             raise ValueError("Candidate not found.")
         if not hunt:
             raise ValueError("Talent Hunt not found.")
-        target = db.scalar(select(HuntCandidate).where(
-            HuntCandidate.hunt_id == hunt.id,
-            HuntCandidate.candidate_id == candidate.id,
-        ))
+        target = db.scalar(
+            select(HuntCandidate).where(
+                HuntCandidate.hunt_id == hunt.id,
+                HuntCandidate.candidate_id == candidate.id,
+            )
+        )
         removed_rows = []
         removed_tags = []
         others = []
         tags_to_remove = []
         if data.move_from_other_hunts:
-            others = list(db.scalars(select(HuntCandidate).where(
-                HuntCandidate.candidate_id == candidate.id,
-                HuntCandidate.hunt_id != hunt.id,
-            )).all())
+            others = list(
+                db.scalars(
+                    select(HuntCandidate).where(
+                        HuntCandidate.candidate_id == candidate.id,
+                        HuntCandidate.hunt_id != hunt.id,
+                    )
+                ).all()
+            )
             removed_rows = [_pipeline_row_snapshot(row) for row in others]
             keep_tag = f"Hunt: {hunt.title}".lower()
-            tags = list(db.scalars(select(CandidateTag).where(
-                CandidateTag.candidate_id == candidate.id,
-                CandidateTag.tag_name.like("Hunt:%"),
-            )).all())
+            tags = list(
+                db.scalars(
+                    select(CandidateTag).where(
+                        CandidateTag.candidate_id == candidate.id,
+                        CandidateTag.tag_name.like("Hunt:%"),
+                    )
+                ).all()
+            )
             for tag in tags:
                 if (tag.tag_name or "").lower() != keep_tag:
-                    removed_tags.append({
-                        "id": tag.id, "tag_name": tag.tag_name, "color": tag.color,
-                        "candidate_id": tag.candidate_id,
-                    })
+                    removed_tags.append(
+                        {
+                            "id": tag.id,
+                            "tag_name": tag.tag_name,
+                            "color": tag.color,
+                            "candidate_id": tag.candidate_id,
+                        }
+                    )
                     tags_to_remove.append(tag)
         created_enrollment = target is None
         if target is None:
             target = add_candidate_to_hunt(
-                db, hunt_id=hunt.id, candidate_id=candidate.id,
-                full_name=candidate.full_name, email=candidate.email, phone=candidate.phone,
-                current_title=candidate.current_title, current_company=candidate.current_company,
-                location=candidate.location, linkedin_url=candidate.linkedin_url,
+                db,
+                hunt_id=hunt.id,
+                candidate_id=candidate.id,
+                full_name=candidate.full_name,
+                email=candidate.email,
+                phone=candidate.phone,
+                current_title=candidate.current_title,
+                current_company=candidate.current_company,
+                location=candidate.location,
+                linkedin_url=candidate.linkedin_url,
                 github_url=candidate.github_url,
                 ai_summary=(data.note or "").strip() or f'Assigned to hunt "{hunt.title}".',
                 source_platform="manual" if ctx.actor_type != "agent" else "copilot",
                 commit=False,
             )
         tag_name = f"Hunt: {hunt.title}"
-        target_tag = db.scalar(select(CandidateTag).where(
-            CandidateTag.candidate_id == candidate.id,
-            CandidateTag.tag_name == tag_name,
-        ))
+        target_tag = db.scalar(
+            select(CandidateTag).where(
+                CandidateTag.candidate_id == candidate.id,
+                CandidateTag.tag_name == tag_name,
+            )
+        )
         created_tag_id = None
         if not target_tag:
             target_tag = CandidateTag(candidate_id=candidate.id, tag_name=tag_name, color="#19d3c5")
@@ -1997,36 +2469,58 @@ def enroll_pipeline_action(data: PipelineEnrollInput, ctx: ActionContext) -> dic
             db.delete(tag)
         if others or tags_to_remove:
             db.flush()
-        changed = created_enrollment or bool(removed_rows) or bool(removed_tags) or created_tag_id is not None
+        changed = (
+            created_enrollment
+            or bool(removed_rows)
+            or bool(removed_tags)
+            or created_tag_id is not None
+        )
         if not changed:
             return {
-                "status": "success", "changed": False, "candidate_id": candidate.id,
-                "hunt_id": hunt.id, "hunt_candidate_id": target.id,
-                "message": "Candidate is already enrolled in this Hunt.", "undoable": False,
+                "status": "success",
+                "changed": False,
+                "candidate_id": candidate.id,
+                "hunt_id": hunt.id,
+                "hunt_candidate_id": target.id,
+                "message": "Candidate is already enrolled in this Hunt.",
+                "undoable": False,
             }
         history = record_action(
-            db, action_type="enroll_pipeline_candidate",
+            db,
+            action_type="enroll_pipeline_candidate",
             summary=f"{'Moved' if data.move_from_other_hunts else 'Added'} {candidate.full_name} to {hunt.title}",
-            actor_type=_history_actor(ctx), session_id=ctx.session_id,
+            actor_type=_history_actor(ctx),
+            session_id=ctx.session_id,
             payload={
-                "candidate_id": candidate.id, "hunt_id": hunt.id,
+                "candidate_id": candidate.id,
+                "hunt_id": hunt.id,
                 "hunt_candidate_id": target.id,
             },
             undo_payload={
-                "candidate_id": candidate.id, "hunt_id": hunt.id,
+                "candidate_id": candidate.id,
+                "hunt_id": hunt.id,
                 "hunt_candidate_id": target.id,
                 "created_enrollment": created_enrollment,
-                "created_activity_ids": [row.id for row in target.activities or []] if created_enrollment else [],
+                "created_activity_ids": [row.id for row in target.activities or []]
+                if created_enrollment
+                else [],
                 "created_tag_id": created_tag_id,
-                "removed_rows": removed_rows, "removed_tags": removed_tags,
+                "removed_rows": removed_rows,
+                "removed_tags": removed_tags,
             },
         )
         return {
-            "status": "success", "changed": True, "candidate_id": candidate.id,
-            "candidate_name": candidate.full_name, "hunt_id": hunt.id,
-            "hunt_title": hunt.title, "hunt_candidate_id": target.id,
-            "moved": data.move_from_other_hunts, "action_id": history.id,
-            "undoable": True, "undo_window_days": 7,
+            "status": "success",
+            "changed": True,
+            "candidate_id": candidate.id,
+            "candidate_name": candidate.full_name,
+            "hunt_id": hunt.id,
+            "hunt_title": hunt.title,
+            "hunt_candidate_id": target.id,
+            "moved": data.move_from_other_hunts,
+            "action_id": history.id,
+            "undoable": True,
+            "undo_window_days": 7,
         }
 
 
@@ -2068,10 +2562,16 @@ def remove_pipeline_action(data: PipelineRemoveInput, ctx: ActionContext) -> dic
             undo_payload={"hunt_id": hunt_id, "row": snapshot},
         )
         return {
-            "status": "success", "changed": True, "hunt_id": hunt_id,
-            "hunt_candidate_id": data.hunt_candidate_id, "candidate_id": candidate_id,
-            "candidate_name": name, "canonical_candidate_preserved": True,
-            "action_id": history.id, "undoable": True, "undo_window_days": 7,
+            "status": "success",
+            "changed": True,
+            "hunt_id": hunt_id,
+            "hunt_candidate_id": data.hunt_candidate_id,
+            "candidate_id": candidate_id,
+            "candidate_name": name,
+            "canonical_candidate_preserved": True,
+            "action_id": history.id,
+            "undoable": True,
+            "undo_window_days": 7,
         }
 
 
@@ -2104,26 +2604,28 @@ def triage_pipeline_action(data: PipelineTriageInput, ctx: ActionContext) -> dic
         if data.decision == "pass" and row.candidate_id and tag_name:
             removed_tags = [
                 {"id": tag.id, "tag_name": tag.tag_name, "color": tag.color}
-                for tag in db.scalars(select(CandidateTag).where(
-                    CandidateTag.candidate_id == row.candidate_id,
-                    CandidateTag.tag_name == tag_name,
-                )).all()
+                for tag in db.scalars(
+                    select(CandidateTag).where(
+                        CandidateTag.candidate_id == row.candidate_id,
+                        CandidateTag.tag_name == tag_name,
+                    )
+                ).all()
             ]
-        before_activity_ids = set(db.scalars(select(HuntActivity.id).where(
-            HuntActivity.hunt_id == row.hunt_id
-        )).all())
+        before_activity_ids = set(
+            db.scalars(select(HuntActivity.id).where(HuntActivity.hunt_id == row.hunt_id)).all()
+        )
         result = (
-            keep_hunt_candidate(
-                db, row.id, note=data.note, author_name=data.author, commit=False
-            )
+            keep_hunt_candidate(db, row.id, note=data.note, author_name=data.author, commit=False)
             if data.decision == "keep"
             else pass_hunt_candidate(
                 db, row.id, note=data.note, author_name=data.author, commit=False
             )
         )
-        after_activity_ids = set(db.scalars(select(HuntActivity.id).where(
-            HuntActivity.hunt_id == snapshot["hunt_id"]
-        )).all())
+        after_activity_ids = set(
+            db.scalars(
+                select(HuntActivity.id).where(HuntActivity.hunt_id == snapshot["hunt_id"])
+            ).all()
+        )
         created_activity_ids = sorted(after_activity_ids - before_activity_ids)
         history = record_action(
             db,
@@ -2132,19 +2634,29 @@ def triage_pipeline_action(data: PipelineTriageInput, ctx: ActionContext) -> dic
             actor_type=_history_actor(ctx),
             session_id=ctx.session_id,
             payload={
-                "hunt_id": snapshot["hunt_id"], "hunt_candidate_id": snapshot["id"],
-                "candidate_id": snapshot["candidate_id"], "decision": data.decision,
+                "hunt_id": snapshot["hunt_id"],
+                "hunt_candidate_id": snapshot["id"],
+                "candidate_id": snapshot["candidate_id"],
+                "decision": data.decision,
             },
             undo_payload={
-                "decision": data.decision, "hunt_id": snapshot["hunt_id"],
-                "row": snapshot, "playbook_entry_id": result.get("playbook_entry_id"),
-                "created_activity_ids": created_activity_ids, "removed_tags": removed_tags,
+                "decision": data.decision,
+                "hunt_id": snapshot["hunt_id"],
+                "row": snapshot,
+                "playbook_entry_id": result.get("playbook_entry_id"),
+                "created_activity_ids": created_activity_ids,
+                "removed_tags": removed_tags,
             },
         )
         return {
-            **result, "changed": True, "hunt_id": snapshot["hunt_id"],
-            "hunt_candidate_id": snapshot["id"], "candidate_name": snapshot["full_name"],
-            "action_id": history.id, "undoable": True, "undo_window_days": 7,
+            **result,
+            "changed": True,
+            "hunt_id": snapshot["hunt_id"],
+            "hunt_candidate_id": snapshot["id"],
+            "candidate_name": snapshot["full_name"],
+            "action_id": history.id,
+            "undoable": True,
+            "undo_window_days": 7,
         }
 
 
@@ -2167,27 +2679,265 @@ def add_pipeline_stage_action(data: PipelineStageAddInput, ctx: ActionContext) -
     with SessionFactory() as db:
         if not db.get(TalentHunt, data.hunt_id):
             raise ValueError("Talent Hunt not found.")
-        existing = list(db.scalars(select(HuntStage).where(HuntStage.hunt_id == data.hunt_id)).all())
+        existing = list(
+            db.scalars(select(HuntStage).where(HuntStage.hunt_id == data.hunt_id)).all()
+        )
         if any((stage.name or "").strip().lower() == data.name.lower() for stage in existing):
             raise ValueError("A Pipeline stage with that name already exists.")
         stage = HuntStage(
-            hunt_id=data.hunt_id, name=data.name,
+            hunt_id=data.hunt_id,
+            name=data.name,
             position=max((item.position for item in existing), default=-1) + 1,
             color=data.color,
         )
         db.add(stage)
         db.flush()
         history = record_action(
-            db, action_type="add_pipeline_stage", summary=f"Added Pipeline stage {stage.name}",
-            actor_type=_history_actor(ctx), session_id=ctx.session_id,
+            db,
+            action_type="add_pipeline_stage",
+            summary=f"Added Pipeline stage {stage.name}",
+            actor_type=_history_actor(ctx),
+            session_id=ctx.session_id,
             payload={"hunt_id": data.hunt_id, "stage_id": stage.id},
             undo_payload={"hunt_id": data.hunt_id, "stage_id": stage.id},
         )
         return {
-            "status": "success", "changed": True, "hunt_id": data.hunt_id,
-            "stage_id": stage.id, "stage": stage.name, "action_id": history.id,
-            "undoable": True, "undo_window_days": 7,
+            "status": "success",
+            "changed": True,
+            "hunt_id": data.hunt_id,
+            "stage_id": stage.id,
+            "stage": stage.name,
+            "action_id": history.id,
+            "undoable": True,
+            "undo_window_days": 7,
         }
+
+
+@register_action(
+    "playbook.list",
+    description="List shared sourcing Playbook decisions and insights with bounded filters.",
+    input_model=PlaybookListInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="consult_sourcing_playbook",
+)
+def list_playbook_action(data: PlaybookListInput, ctx: ActionContext) -> dict[str, Any]:
+    from app.hunts.playbook import list_playbook_entries
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        entries = list_playbook_entries(
+            db,
+            entry_type=data.entry_type,
+            role=data.role,
+            platform=data.platform,
+            search=data.search,
+            limit=data.limit,
+        )
+        rows = [
+            {
+                "id": entry.id,
+                "entry_type": entry.entry_type,
+                "insight_outcome": entry.insight_outcome,
+                "role_context": entry.role_context,
+                "platform": entry.platform,
+                "query_text": entry.query_text,
+                "candidate_name": entry.candidate_name,
+                "candidate_title": entry.candidate_title,
+                "candidate_id": entry.candidate_id,
+                "hunt_id": entry.hunt_id,
+                "hunt_title": entry.hunt_title,
+                "note": entry.note,
+                "author_name": entry.author_name,
+                "metadata": json.loads(entry.metadata_json) if entry.metadata_json else None,
+                "created_at": entry.created_at.isoformat() if entry.created_at else None,
+            }
+            for entry in entries
+        ]
+        return {"status": "success", "count": len(rows), "entries": rows}
+
+
+@register_action(
+    "playbook.insights.add",
+    description="Add one shared sourcing insight with seven-day Undo.",
+    input_model=PlaybookInsightAddInput,
+    resource_resolver=_playbook_insight_resources,
+    classification="mutation",
+    risk_level="R2",
+    required_scopes=("write",),
+    copilot_enabled=True,
+    copilot_tool_name="add_sourcing_playbook_insight",
+)
+def add_playbook_insight_action(
+    data: PlaybookInsightAddInput, ctx: ActionContext
+) -> dict[str, Any]:
+    from app.actions.history import record_action
+    from app.hunts.models import TalentHunt
+    from app.hunts.playbook import add_insight
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        hunt = db.get(TalentHunt, data.hunt_id) if data.hunt_id else None
+        if data.hunt_id and not hunt:
+            raise ValueError("Talent Hunt not found.")
+        entry = add_insight(
+            db,
+            worked=data.worked,
+            note=data.note,
+            role_context=(data.role_context or "").strip() or None,
+            platform=(data.platform or "").strip() or None,
+            query_text=(data.query_text or "").strip() or None,
+            hunt_id=data.hunt_id,
+            hunt_title=hunt.title if hunt else None,
+            author_name=data.author_name,
+            commit=False,
+        )
+        history = record_action(
+            db,
+            action_type="add_playbook_insight",
+            summary=f"Added Playbook insight: {entry.note[:80]}",
+            actor_type=_history_actor(ctx),
+            session_id=ctx.session_id,
+            payload={"playbook_entry_id": entry.id, "hunt_id": entry.hunt_id},
+            undo_payload={"playbook_entry_id": entry.id},
+        )
+        return {
+            "status": "success",
+            "entry_id": entry.id,
+            "outcome": entry.insight_outcome,
+            "action_id": history.id,
+            "undoable": True,
+            "undo_window_days": 7,
+        }
+
+
+@register_action(
+    "intake.requests.create",
+    description="Create a candidate Intake link and draft outreach text; nothing is sent. Supports seven-day Undo until submitted.",
+    input_model=IntakeRequestCreateInput,
+    resource_resolver=_intake_request_resources,
+    classification="mutation",
+    risk_level="R2",
+    required_scopes=("write", "draft"),
+    copilot_enabled=True,
+    copilot_tool_name="create_candidate_intake_link",
+)
+def create_intake_request_action(
+    data: IntakeRequestCreateInput, ctx: ActionContext
+) -> dict[str, Any]:
+    from app.actions.history import record_action
+    from app.candidates.intake_service import (
+        create_intake_request,
+        draft_outreach_message,
+        get_hunt_jd_context,
+        intake_url_for_token,
+    )
+    from app.candidates.service import get_candidate
+    from app.hunts.models import TalentHunt
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        candidate = get_candidate(db, data.candidate_id)
+        if not candidate:
+            raise ValueError("Candidate not found.")
+        if data.hunt_id and not db.get(TalentHunt, data.hunt_id):
+            raise ValueError("Talent Hunt not found.")
+        request = create_intake_request(
+            db,
+            data.candidate_id,
+            hunt_id=data.hunt_id,
+            expires_in_days=data.expires_in_days,
+            mark_sent=True,
+            commit=False,
+        )
+        if not request:
+            raise RuntimeError("Could not create Intake link.")
+        url = intake_url_for_token(request.token)
+        jd = get_hunt_jd_context(db, data.hunt_id)
+        draft = draft_outreach_message(
+            candidate, url=url, hunt_title=jd.get("title"), role=jd.get("role")
+        )
+        history = record_action(
+            db,
+            action_type="create_intake_request",
+            summary=f"Created Intake link for {candidate.full_name}",
+            actor_type=_history_actor(ctx),
+            session_id=ctx.session_id,
+            payload={
+                "request_id": request.id,
+                "candidate_id": candidate.id,
+                "hunt_id": data.hunt_id,
+            },
+            undo_payload={"request_id": request.id},
+        )
+        return {
+            "status": "success",
+            "candidate_id": candidate.id,
+            "hunt_id": data.hunt_id,
+            "request_id": request.id,
+            "url": url,
+            "draft_message": draft,
+            "sent": False,
+            "message": "Link created. Nothing was sent.",
+            "action_id": history.id,
+            "undoable": True,
+            "undo_window_days": 7,
+        }
+
+
+@register_action(
+    "intake.submissions.list",
+    description="List pending Candidate Intake submissions awaiting recruiter review.",
+    input_model=IntakeSubmissionListInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="list_pending_intake_submissions",
+)
+def list_intake_submissions_action(
+    data: IntakeSubmissionListInput, ctx: ActionContext
+) -> dict[str, Any]:
+    from app.candidates.intake_service import list_pending_submissions
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        rows = list_pending_submissions(db, candidate_id=data.candidate_id, limit=data.limit)
+        return {"status": "success", "count": len(rows), "submissions": rows}
+
+
+@register_action(
+    "intake.submissions.review",
+    description="Accept and apply, or reject, one pending Intake submission as one audited transaction with seven-day Undo.",
+    input_model=IntakeSubmissionReviewInput,
+    resource_resolver=_intake_submission_resources,
+    classification="mutation",
+    risk_level="R2",
+    required_scopes=("write",),
+    copilot_enabled=True,
+    copilot_tool_name="apply_intake_submission",
+)
+def review_intake_submission_action(
+    data: IntakeSubmissionReviewInput, ctx: ActionContext
+) -> dict[str, Any]:
+    from app.candidates.intake_service import apply_intake_submission
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        result = apply_intake_submission(
+            db,
+            data.submission_id,
+            mode=data.mode,
+            accept=data.accept,
+            profile_payload=data.profile_payload,
+            actor_type=_history_actor(ctx),
+            session_id=ctx.session_id,
+        )
+        if result.get("status") != "success":
+            raise ValueError(result.get("message") or "Intake submission review failed.")
+        return result
 
 
 @register_action(
@@ -2205,25 +2955,36 @@ def list_hunts_action(data: HuntListInput, ctx: ActionContext) -> dict[str, Any]
     from app.infrastructure.db import SessionFactory
 
     with SessionFactory() as db:
-        status = data.status.strip().title() if data.status and data.status.lower() != "all" else None
+        status = (
+            data.status.strip().title() if data.status and data.status.lower() != "all" else None
+        )
         hunts = list_hunts(db, status=status, skip=data.offset, limit=data.limit)
         needle = (data.search or "").strip().lower()
         if needle:
-            hunts = [hunt for hunt in hunts if needle in (hunt.title or "").lower()
-                     or needle in (hunt.target_role or "").lower()]
+            hunts = [
+                hunt
+                for hunt in hunts
+                if needle in (hunt.title or "").lower()
+                or needle in (hunt.target_role or "").lower()
+            ]
         rows = []
         for hunt in hunts:
             metrics = get_hunt_metrics(db, hunt.id, reconcile=False) or {}
             payload = _hunt_payload(hunt)
-            rows.append({
-                **payload,
-                "total_candidates": metrics.get("total_candidates", 0),
-                "hired_count": metrics.get("hired_count", 0),
-                "avg_match_score": metrics.get("avg_match_score", 0.0),
-            })
+            rows.append(
+                {
+                    **payload,
+                    "total_candidates": metrics.get("total_candidates", 0),
+                    "hired_count": metrics.get("hired_count", 0),
+                    "avg_match_score": metrics.get("avg_match_score", 0.0),
+                }
+            )
         return {
-            "status": "success", "count": len(rows), "offset": data.offset,
-            "limit": data.limit, "hunts": rows,
+            "status": "success",
+            "count": len(rows),
+            "offset": data.offset,
+            "limit": data.limit,
+            "hunts": rows,
         }
 
 
@@ -2278,11 +3039,14 @@ def create_hunt_action(data: HuntCreateInput, ctx: ActionContext) -> dict[str, A
         "locations": location,
         "industry": (data.industry or "").strip() or None,
         "remote_policy": (data.remote_policy or "").strip() or None,
-        "target_platforms": [item.strip().lower() for item in data.target_platforms if item.strip()],
+        "target_platforms": [
+            item.strip().lower() for item in data.target_platforms if item.strip()
+        ],
     }
     with SessionFactory() as db:
         hunt = create_hunt(
-            db, title=data.title,
+            db,
+            title=data.title,
             target_role=(data.target_role or "").strip() or data.title,
             location=location,
             salary_range=(data.salary_range or "").strip() or None,
@@ -2296,8 +3060,11 @@ def create_hunt_action(data: HuntCreateInput, ctx: ActionContext) -> dict[str, A
         db.flush()
         initial = _hunt_payload(hunt)
         history = record_action(
-            db, action_type="create_hunt", summary=f"Created Talent Hunt '{hunt.title}'",
-            actor_type=_history_actor(ctx), session_id=ctx.session_id,
+            db,
+            action_type="create_hunt",
+            summary=f"Created Talent Hunt '{hunt.title}'",
+            actor_type=_history_actor(ctx),
+            session_id=ctx.session_id,
             payload={"hunt_id": hunt.id, "title": hunt.title},
             undo_payload={
                 "hunt_id": hunt.id,
@@ -2308,9 +3075,14 @@ def create_hunt_action(data: HuntCreateInput, ctx: ActionContext) -> dict[str, A
             },
         )
         return {
-            "status": "success", "changed": True, "hunt_id": hunt.id,
-            "hunt_title": hunt.title, "hunt_status": hunt.status,
-            "action_id": history.id, "undoable": True, "undo_window_days": 7,
+            "status": "success",
+            "changed": True,
+            "hunt_id": hunt.id,
+            "hunt_title": hunt.title,
+            "hunt_status": hunt.status,
+            "action_id": history.id,
+            "undoable": True,
+            "undo_window_days": 7,
         }
 
 
@@ -2389,27 +3161,40 @@ def update_hunt_action(data: HuntUpdateInput, ctx: ActionContext) -> dict[str, A
                     changed.append("experience")
                 config.keywords = f"Exp: {exp_text}" if exp_text else None
             if "target_platforms" in data.model_fields_set:
-                platforms = [item.strip().lower() for item in (data.target_platforms or []) if item.strip()]
+                platforms = [
+                    item.strip().lower() for item in (data.target_platforms or []) if item.strip()
+                ]
                 encoded = json.dumps(platforms)
                 if config.target_platforms != encoded:
                     config.target_platforms = encoded
                     changed.append("target_platforms")
         if not changed:
             return {
-                "status": "success", "changed": False, "hunt_id": hunt.id,
-                "hunt_title": hunt.title, "undoable": False,
+                "status": "success",
+                "changed": False,
+                "hunt_id": hunt.id,
+                "hunt_title": hunt.title,
+                "undoable": False,
             }
         db.flush()
         history = record_action(
-            db, action_type="update_hunt", summary=f"Updated Talent Hunt '{hunt.title}'",
-            actor_type=_history_actor(ctx), session_id=ctx.session_id,
+            db,
+            action_type="update_hunt",
+            summary=f"Updated Talent Hunt '{hunt.title}'",
+            actor_type=_history_actor(ctx),
+            session_id=ctx.session_id,
             payload={"hunt_id": hunt.id, "changed_fields": sorted(set(changed))},
             undo_payload={"hunt_id": hunt.id, "hunt_state": before},
         )
         return {
-            "status": "success", "changed": True, "hunt_id": hunt.id,
-            "hunt_title": hunt.title, "changed_fields": sorted(set(changed)),
-            "action_id": history.id, "undoable": True, "undo_window_days": 7,
+            "status": "success",
+            "changed": True,
+            "hunt_id": hunt.id,
+            "hunt_title": hunt.title,
+            "changed_fields": sorted(set(changed)),
+            "action_id": history.id,
+            "undoable": True,
+            "undo_window_days": 7,
         }
 
 
@@ -2438,22 +3223,33 @@ def set_hunt_status_action(data: HuntStatusInput, ctx: ActionContext) -> dict[st
         previous = hunt.status
         if previous == data.status:
             return {
-                "status": "success", "changed": False, "hunt_id": hunt.id,
-                "hunt_title": hunt.title, "new_status": hunt.status, "undoable": False,
+                "status": "success",
+                "changed": False,
+                "hunt_id": hunt.id,
+                "hunt_title": hunt.title,
+                "new_status": hunt.status,
+                "undoable": False,
             }
         hunt.status = data.status
         history = record_action(
-            db, action_type="set_hunt_status",
+            db,
+            action_type="set_hunt_status",
             summary=f"Changed '{hunt.title}' from {previous} to {data.status}",
-            actor_type=_history_actor(ctx), session_id=ctx.session_id,
+            actor_type=_history_actor(ctx),
+            session_id=ctx.session_id,
             payload={"hunt_id": hunt.id, "new_status": data.status},
             undo_payload={"hunt_id": hunt.id, "previous_status": previous},
         )
         return {
-            "status": "success", "changed": True, "hunt_id": hunt.id,
-            "hunt_title": hunt.title, "previous_status": previous,
-            "new_status": data.status, "action_id": history.id,
-            "undoable": True, "undo_window_days": 7,
+            "status": "success",
+            "changed": True,
+            "hunt_id": hunt.id,
+            "hunt_title": hunt.title,
+            "previous_status": previous,
+            "new_status": data.status,
+            "action_id": history.id,
+            "undoable": True,
+            "undo_window_days": 7,
         }
 
 
@@ -2495,6 +3291,307 @@ def archive_hunt_action(data: HuntArchiveInput, ctx: ActionContext) -> dict[str,
             "undoable": True,
             "undo_window_days": 7,
         }
+
+
+@register_action(
+    "analytics.kpi",
+    description="Read canonical recruiting KPIs for all Hunts or one Hunt, including explicit telemetry limitations.",
+    input_model=AnalyticsScopeInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="get_recruiting_kpis",
+)
+def get_analytics_kpi_action(data: AnalyticsScopeInput, ctx: ActionContext) -> dict[str, Any]:
+    from app.analytics.service import get_kpi_summary
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        scope = _analytics_scope(db, data.hunt_id)
+        metrics = get_kpi_summary(db, hunt_id=data.hunt_id)
+        return _analytics_result(
+            metric="kpi",
+            service="app.analytics.service.get_kpi_summary",
+            scope=scope,
+            data=metrics,
+            tables=[
+                "talent_hunts",
+                "candidates",
+                "hunt_candidates",
+                "hunt_stages",
+                "communications",
+                "hunt_activities",
+            ],
+            limitations=[
+                "Provider token and billing telemetry is not persisted; cost fields remain zero.",
+                "Average time to fill is based only on recorded hired transitions.",
+            ],
+        )
+
+
+@register_action(
+    "analytics.funnel",
+    description="Read the canonical recruiting funnel and stage conversion counts for all Hunts or one Hunt.",
+    input_model=AnalyticsScopeInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="get_recruiting_funnel",
+)
+def get_analytics_funnel_action(data: AnalyticsScopeInput, ctx: ActionContext) -> dict[str, Any]:
+    from app.analytics.service import get_hunt_funnel_data
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        scope = _analytics_scope(db, data.hunt_id)
+        metrics = get_hunt_funnel_data(db, hunt_id=data.hunt_id)
+        return _analytics_result(
+            metric="funnel",
+            service="app.analytics.service.get_hunt_funnel_data",
+            scope=scope,
+            data=metrics,
+            tables=["hunt_candidates", "hunt_stages"],
+        )
+
+
+@register_action(
+    "analytics.time_to_fill",
+    description="Read canonical Hunt velocity and time-to-fill metrics without inventing unavailable stage durations.",
+    input_model=AnalyticsScopeInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="get_time_to_fill_analytics",
+)
+def get_analytics_time_to_fill_action(
+    data: AnalyticsScopeInput,
+    ctx: ActionContext,
+) -> dict[str, Any]:
+    from app.analytics.service import get_time_to_fill_metrics
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        scope = _analytics_scope(db, data.hunt_id)
+        metrics = get_time_to_fill_metrics(db, hunt_id=data.hunt_id)
+        return _analytics_result(
+            metric="time_to_fill",
+            service="app.analytics.service.get_time_to_fill_metrics",
+            scope=scope,
+            data=metrics,
+            tables=["talent_hunts", "hunt_candidates", "hunt_stages"],
+            limitations=[
+                "Per-stage entry timestamps are not stored, so stage bottleneck durations are unavailable."
+            ],
+        )
+
+
+@register_action(
+    "analytics.sourcing_quality",
+    description="Read canonical match-score, source-channel, and stored-skill quality metrics.",
+    input_model=AnalyticsScopeInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="get_sourcing_quality_analytics",
+)
+def get_analytics_sourcing_quality_action(
+    data: AnalyticsScopeInput,
+    ctx: ActionContext,
+) -> dict[str, Any]:
+    from app.analytics.service import get_sourcing_quality_metrics
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        scope = _analytics_scope(db, data.hunt_id)
+        metrics = get_sourcing_quality_metrics(db, hunt_id=data.hunt_id)
+        return _analytics_result(
+            metric="sourcing_quality",
+            service="app.analytics.service.get_sourcing_quality_metrics",
+            scope=scope,
+            data=metrics,
+            tables=["hunt_candidates", "candidate_profiles"],
+            limitations=[
+                "Unscored candidates are reported separately rather than assigned a score."
+            ],
+        )
+
+
+@register_action(
+    "analytics.outreach",
+    description="Read canonical communication and sequence metrics, scoped to candidates in one Hunt when requested.",
+    input_model=AnalyticsScopeInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="get_outreach_analytics",
+)
+def get_analytics_outreach_action(data: AnalyticsScopeInput, ctx: ActionContext) -> dict[str, Any]:
+    from app.analytics.service import get_outreach_analytics
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        scope = _analytics_scope(db, data.hunt_id)
+        metrics = get_outreach_analytics(db, hunt_id=data.hunt_id)
+        return _analytics_result(
+            metric="outreach",
+            service="app.analytics.service.get_outreach_analytics",
+            scope=scope,
+            data=metrics,
+            tables=["communications", "outreach_sequences", "outreach_enrollments"],
+            limitations=[
+                "Hunt scope follows canonical Candidate enrollment because communications do not store a Hunt ID."
+            ],
+        )
+
+
+@register_action(
+    "analytics.ai_cost",
+    description="Read recorded AI operation counts and honest cost telemetry availability for all Hunts or one Hunt.",
+    input_model=AnalyticsScopeInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="get_ai_usage_costs",
+)
+def get_analytics_ai_cost_action(data: AnalyticsScopeInput, ctx: ActionContext) -> dict[str, Any]:
+    from app.analytics.service import get_ai_cost_tracker
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        scope = _analytics_scope(db, data.hunt_id)
+        metrics = get_ai_cost_tracker(db, hunt_id=data.hunt_id)
+        return _analytics_result(
+            metric="ai_cost",
+            service="app.analytics.service.get_ai_cost_tracker",
+            scope=scope,
+            data=metrics,
+            tables=["hunt_activities"],
+            limitations=[
+                "Provider, token, and billing telemetry is not persisted; no cost saving is estimated."
+            ],
+        )
+
+
+@register_action(
+    "analytics.trends",
+    description="Read canonical daily sourcing, outreach, and hire trends for a bounded date window.",
+    input_model=AnalyticsTrendInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="get_recruiting_trends",
+)
+def get_analytics_trends_action(data: AnalyticsTrendInput, ctx: ActionContext) -> dict[str, Any]:
+    from app.analytics.service import get_trend_analytics
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        scope = _analytics_scope(db, data.hunt_id)
+        metrics = get_trend_analytics(db, days=data.days, hunt_id=data.hunt_id)
+        return _analytics_result(
+            metric="trends",
+            service="app.analytics.service.get_trend_analytics",
+            scope=scope,
+            data=metrics,
+            tables=["candidates", "hunt_candidates", "hunt_stages", "communications"],
+            filters={"hunt_id": data.hunt_id, "days": data.days},
+        )
+
+
+@register_action(
+    "jobs.list",
+    description="List bounded durable background-job history with status, progress, cancellation, and retry capability.",
+    input_model=JobListInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="list_background_jobs",
+)
+def list_background_jobs_action(data: JobListInput, ctx: ActionContext) -> dict[str, Any]:
+    from app.jobs import service as jobs
+
+    if data.status == "all":
+        statuses = None
+    elif data.status == "active":
+        statuses = {"running"}
+    elif data.status == "retryable":
+        statuses = jobs.RETRYABLE_STATUSES
+    else:
+        statuses = {data.status}
+    rows = jobs.list_job_rows(
+        statuses=statuses,
+        kind=data.kind,
+        hunt_id=data.hunt_id,
+        limit=data.limit,
+    )
+    items = [_job_payload(row) for row in rows]
+    if data.status == "retryable":
+        items = [item for item in items if item["retryable"]]
+    return {
+        "status": "success",
+        "filters": {
+            "status": data.status,
+            "kind": data.kind,
+            "hunt_id": data.hunt_id,
+            "limit": data.limit,
+        },
+        "count": len(items),
+        "jobs": items,
+    }
+
+
+@register_action(
+    "jobs.get",
+    description="Read exact durable status, progress, lineage, error, and available controls for one background job.",
+    input_model=JobIdInput,
+    classification="query",
+    risk_level="R0",
+    required_scopes=("read",),
+    copilot_enabled=True,
+    copilot_tool_name="get_background_job",
+)
+def get_background_job_action(data: JobIdInput, ctx: ActionContext) -> dict[str, Any]:
+    from app.jobs import service as jobs
+
+    row = jobs.get_job_row(data.job_id)
+    if not row:
+        raise ValueError("Background job not found.")
+    return {"status": "success", "job": _job_payload(row)}
+
+
+@register_action(
+    "jobs.cancel",
+    description=(
+        "Cancel one supported sourcing, profile-enrichment, connected-site, or embedded-AI "
+        "job by durable ID when it is still safe to interrupt."
+    ),
+    input_model=JobCancelInput,
+    resource_resolver=_job_control_resources,
+    classification="mutation",
+    risk_level="R2",
+    required_scopes=("write", "compute"),
+    copilot_enabled=True,
+    copilot_tool_name="cancel_background_job",
+)
+def cancel_background_job_action(data: JobCancelInput, ctx: ActionContext) -> dict[str, Any]:
+    from app.jobs.runner import cancel_job
+
+    result = cancel_job(data.job_id)
+    return {
+        "status": "success",
+        "job_id": result["job_id"],
+        "kind": result["kind"],
+        "job_status": result["status"],
+        "message": result["message"],
+    }
 
 
 @register_action(

@@ -104,7 +104,9 @@ def render_pipeline(hunt_id: int = 1):
                 ui.button('＋ Add Candidate', on_click=lambda: open_add_candidate_dialog(current_hunt_id)).classes('th-primary-btn')
 
         # Kanban board: horizontal scroll stays under the columns (viewport-bound)
-        board_container = ui.element('div').classes('th-pipeline-board')
+        board_container = ui.element('div').classes('th-pipeline-board').props(
+            'tabindex=0 role=region aria-label="Candidate pipeline board"'
+        )
 
         def open_triage_dialog(c: dict, action: str):
             """Keep or Pass with optional note → global playbook."""

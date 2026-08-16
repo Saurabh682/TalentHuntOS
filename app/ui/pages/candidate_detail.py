@@ -10,12 +10,7 @@ from app.candidates.service import (
 )
 from app.candidates.rag import candidate_rag
 from app.candidates.intake_service import (
-    create_intake_request,
-    draft_outreach_message,
     get_latest_intake_status,
-    get_hunt_jd_context,
-    intake_url_for_token,
-    apply_intake_submission,
     list_pending_submissions,
 )
 from app.ui.components.profile_review_dialog import (
@@ -887,22 +882,18 @@ def render_candidate_detail(candidate_id: int):
             def generate():
                 hid = hunt_sel.value
                 hunt_id = int(hid) if hid and int(hid) != 0 else None
-                with SessionFactory() as db:
-                    req = create_intake_request(db, candidate_id, hunt_id=hunt_id, mark_sent=True)
-                    if not req:
-                        ui.notify('Could not create form link.', type='negative')
-                        return
-                    url = intake_url_for_token(req.token)
-                    jd = get_hunt_jd_context(db, hunt_id)
-                    cand = get_candidate(db, candidate_id)
-                    msg = draft_outreach_message(
-                        cand,
-                        url=url,
-                        hunt_title=jd.get("title"),
-                        role=jd.get("role"),
-                    )
-                url_box.value = url
-                msg_box.value = msg
+                result = dispatch_action(
+                    "intake.requests.create",
+                    {"candidate_id": candidate_id, "hunt_id": hunt_id},
+                    actor_type="ui",
+                    session_id=f"candidate_{candidate_id}",
+                )
+                if not result.success:
+                    ui.notify(result.error or 'Could not create form link.', type='negative')
+                    return
+                data = result.data or {}
+                url_box.value = data.get("url") or ""
+                msg_box.value = data.get("draft_message") or ""
                 ui.notify('Form link ready — copy and send.', type='positive')
 
             with ui.row().classes('w-full justify-between gap-2'):
@@ -938,54 +929,29 @@ def render_candidate_detail(candidate_id: int):
 
             with ui.row().classes('w-full justify-end gap-2'):
                 def reject():
-                    with SessionFactory() as db:
-                        apply_intake_submission(db, submission_id, accept=False)
+                    result = dispatch_action(
+                        "intake.submissions.review",
+                        {"submission_id": submission_id, "accept": False},
+                        actor_type="ui",
+                        session_id=f"candidate_{candidate_id}",
+                    )
+                    if not result.success:
+                        ui.notify(result.error or 'Could not reject submission.', type='negative')
+                        return
                     ui.notify('Submission rejected.', type='info')
                     dialog.close()
                     ui.navigate.to(f'/candidates/{candidate_id}')
 
                 def accept_and_edit():
                     dialog.close()
-
-                    def on_applied():
-                        with SessionFactory() as db:
-                            # Mark accepted without re-applying sections (already written by review)
-                            from app.candidates.models import CandidateIntakeSubmission, CandidateIntakeRequest
-                            from datetime import datetime, timezone
-                            sub = db.get(CandidateIntakeSubmission, submission_id)
-                            if sub and sub.review_status == "pending":
-                                sub.review_status = "accepted"
-                                sub.reviewed_at = datetime.now(timezone.utc)
-                                req = db.get(CandidateIntakeRequest, sub.request_id)
-                                if req:
-                                    req.status = "accepted"
-                                # Still write JD fit note if present
-                                fit = payload.get("jd_fit") or {}
-                                fit_lines = []
-                                for key, label in (
-                                    ("availability", "Availability"),
-                                    ("notice_period", "Notice period"),
-                                    ("salary_expectation", "Salary expectation"),
-                                    ("why_fit", "Why fit"),
-                                ):
-                                    val = fit.get(key)
-                                    if val:
-                                        fit_lines.append(f"{label}: {val}")
-                                if fit_lines:
-                                    from app.candidates.models import CandidateNote
-                                    db.add(CandidateNote(
-                                        candidate_id=candidate_id,
-                                        content="Candidate intake form — JD fit:\n" + "\n".join(fit_lines),
-                                        author="Intake Form",
-                                    ))
-                                db.commit()
-                        ui.navigate.to(f'/candidates/{candidate_id}')
-
                     open_profile_sections_review(
                         candidate_id,
                         draft,
                         title='Apply form answers to profile',
-                        on_applied=on_applied,
+                        on_applied=lambda: ui.navigate.to(f'/candidates/{candidate_id}'),
+                        action_name="intake.submissions.review",
+                        action_extra={"submission_id": submission_id, "accept": True},
+                        nested_payload_key="profile_payload",
                     )
 
                 ui.button('Reject', on_click=reject).props('flat').classes('text-red-300 text-xs')

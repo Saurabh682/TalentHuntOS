@@ -16,16 +16,18 @@ from app.communications.models import BrowserSession
 from app.communications.service import deactivate_browser_sessions_for_platform
 from app.copilot.direct_actions import (
     parse_clear_and_source,
+    parse_common_pool_archive,
     parse_global_candidate_delete,
     parse_pending_hunt_clear_confirmation,
-    run_global_candidate_delete,
+    run_common_pool_archive_preview,
     run_confirmed_hunt_clear,
+    run_global_candidate_delete,
 )
 from app.copilot.tools import remove_candidates_from_hunt
-from app.infrastructure.db import Base
 from app.hunts.models import HuntActivity, HuntCandidate, HuntStage, TalentHunt
 from app.hunts.pipeline import clear_hunt_candidates, move_candidate_stage
 from app.hunts.service import delete_hunt, list_hunts
+from app.infrastructure.db import Base
 
 
 def test_action_history_filters_by_session_and_builds_safe_record_target(tmp_path):
@@ -71,10 +73,12 @@ def test_global_candidate_delete_is_previewed_and_undoable(monkeypatch, tmp_path
     monkeypatch.setattr("app.infrastructure.db.SessionFactory", factory)
 
     with factory() as db:
-        db.add_all([
-            Candidate(full_name="Ada", status="Active"),
-            Candidate(full_name="Grace", status="Passive"),
-        ])
+        db.add_all(
+            [
+                Candidate(full_name="Ada", status="Active"),
+                Candidate(full_name="Grace", status="Passive"),
+            ]
+        )
         db.commit()
 
     preview = run_global_candidate_delete(session_id="default", confirm=False)
@@ -100,6 +104,47 @@ def test_global_delete_does_not_route_to_hunt_clear():
     assert parse_global_candidate_delete("confirm delete all candidates") == {"confirm": True}
 
 
+def test_common_pool_archive_parser_requires_broad_discoveries_scope():
+    assert parse_common_pool_archive("delete all the candidate in discoveries") == {}
+    assert parse_common_pool_archive("clear discoveries") == {}
+    assert parse_common_pool_archive("remove every profile from the common pool") == {}
+    assert parse_common_pool_archive("delete this discovery candidate") is None
+    assert parse_common_pool_archive("delete all candidates in the database") is None
+
+
+def test_common_pool_archive_creates_trusted_preview(monkeypatch):
+    captured = {}
+
+    def fake_preview(action_name, payload, **kwargs):
+        captured.update(action_name=action_name, payload=payload, kwargs=kwargs)
+        return type(
+            "Result",
+            (),
+            {
+                "success": True,
+                "error": None,
+                "data": {
+                    "preview": {
+                        "profile_count": 12,
+                        "linked_candidates_preserved": 3,
+                    }
+                },
+            },
+        )()
+
+    monkeypatch.setattr("app.actions.api.dispatch_preview", fake_preview)
+    message = run_common_pool_archive_preview(session_id="default")
+
+    assert captured == {
+        "action_name": "discoveries.common_pool.archive",
+        "payload": {},
+        "kwargs": {"actor_type": "agent", "session_id": "default"},
+    }
+    assert "12 Discoveries profile(s)" in message
+    assert "3 linked canonical Candidate record(s) will be preserved" in message
+    assert "Nothing has been changed yet" in message
+
+
 def _pipeline_fixture(db):
     candidate = Candidate(full_name="Lin Pipeline", status="Sourced")
     hunt = TalentHunt(title="Platform Hunt", target_role="Engineer")
@@ -118,12 +163,14 @@ def _pipeline_fixture(db):
     )
     db.add(enrollment)
     db.flush()
-    db.add(HuntActivity(
-        hunt_id=hunt.id,
-        candidate_id=enrollment.id,
-        activity_type="candidate_added",
-        description="Added for action-history test.",
-    ))
+    db.add(
+        HuntActivity(
+            hunt_id=hunt.id,
+            candidate_id=enrollment.id,
+            activity_type="candidate_added",
+            description="Added for action-history test.",
+        )
+    )
     db.commit()
     return hunt.id, enrollment.id, sourced.id, contacted.id, candidate.id
 
@@ -135,9 +182,7 @@ def test_pipeline_stage_move_is_recorded_and_undoable(tmp_path):
 
     with factory() as db:
         _, enrollment_id, sourced_id, contacted_id, _ = _pipeline_fixture(db)
-        moved = move_candidate_stage(
-            db, enrollment_id, contacted_id, actor_type="ui"
-        )
+        moved = move_candidate_stage(db, enrollment_id, contacted_id, actor_type="ui")
         assert moved.stage_id == contacted_id
         action = list_recent_actions(db)[0]
         assert action.action_type == "move_pipeline_candidate"
@@ -166,7 +211,9 @@ def test_clear_hunt_candidates_restores_enrollment_tag_and_activity(tmp_path):
         assert restored.candidate_id == candidate_id
         assert restored.stage_id == sourced_id
         assert any(a.activity_type == "candidate_added" for a in restored.activities)
-        assert any(tag.tag_name == "Hunt: Platform Hunt" for tag in db.get(Candidate, candidate_id).tags)
+        assert any(
+            tag.tag_name == "Hunt: Platform Hunt" for tag in db.get(Candidate, candidate_id).tags
+        )
 
 
 def test_copilot_confirmed_hunt_clear_records_undo(monkeypatch, tmp_path):
@@ -178,10 +225,14 @@ def test_copilot_confirmed_hunt_clear_records_undo(monkeypatch, tmp_path):
     with factory() as db:
         hunt_id, _, _, _, _ = _pipeline_fixture(db)
 
-    result = json.loads(remove_candidates_from_hunt.invoke({
-        "hunt_id": str(hunt_id),
-        "confirm": True,
-    }))
+    result = json.loads(
+        remove_candidates_from_hunt.invoke(
+            {
+                "hunt_id": str(hunt_id),
+                "confirm": True,
+            }
+        )
+    )
     assert result["status"] == "success"
     assert result["removed"] == 1
     assert "undone" in result["message"]
@@ -250,10 +301,13 @@ def test_short_confirmation_is_scoped_and_rechecks_the_preview(monkeypatch, tmp_
 
 
 def test_yes_does_not_confirm_an_unrelated_assistant_message():
-    assert parse_pending_hunt_clear_confirmation(
-        "yes",
-        [{"role": "assistant", "content": "Would you like a shortlist summary?"}],
-    ) is None
+    assert (
+        parse_pending_hunt_clear_confirmation(
+            "yes",
+            [{"role": "assistant", "content": "Would you like a shortlist summary?"}],
+        )
+        is None
+    )
 
 
 def test_candidate_timeline_correction_is_undoable(tmp_path):
@@ -271,24 +325,28 @@ def test_candidate_timeline_correction_is_undoable(tmp_path):
         db.add(candidate)
         db.flush()
         db.add(CandidateProfile(candidate_id=candidate.id, headline="Old headline"))
-        db.add(CandidateExperience(
-            candidate_id=candidate.id,
-            company="Old company",
-            title="Old title",
-            start_date="2020-01",
-            end_date="2021-01",
-        ))
+        db.add(
+            CandidateExperience(
+                candidate_id=candidate.id,
+                company="Old company",
+                title="Old title",
+                start_date="2020-01",
+                end_date="2021-01",
+            )
+        )
         db.commit()
 
-        previous_rows = [{
-            "company": "Old company",
-            "title": "Old title",
-            "start_date": "2020-01",
-            "end_date": "2021-01",
-            "location": None,
-            "is_current": False,
-            "description": None,
-        }]
+        previous_rows = [
+            {
+                "company": "Old company",
+                "title": "Old title",
+                "start_date": "2020-01",
+                "end_date": "2021-01",
+                "location": None,
+                "is_current": False,
+                "description": None,
+            }
+        ]
         candidate.experience_years = 5.4
         candidate.current_title = "Current title"
         candidate.current_company = "Current company"
@@ -353,31 +411,37 @@ def test_profile_replacement_restores_complete_prior_state(tmp_path):
         )
         db.add(candidate)
         db.flush()
-        db.add(CandidateProfile(
-            candidate_id=candidate.id,
-            headline="Original headline",
-            skills_json=json.dumps(["Python"]),
-        ))
-        db.add(CandidateExperience(
-            candidate_id=candidate.id,
-            company="Original company",
-            title="Original role",
-            start_date="2021-01",
-            end_date="2024-01",
-        ))
+        db.add(
+            CandidateProfile(
+                candidate_id=candidate.id,
+                headline="Original headline",
+                skills_json=json.dumps(["Python"]),
+            )
+        )
+        db.add(
+            CandidateExperience(
+                candidate_id=candidate.id,
+                company="Original company",
+                title="Original role",
+                start_date="2021-01",
+                end_date="2024-01",
+            )
+        )
         db.commit()
         candidate_id = candidate.id
 
         updated = replace_or_merge_profile_sections(
             db,
             candidate_id,
-            experiences=[{
-                "company": "New company",
-                "title": "New role",
-                "start_date": "2024-02",
-                "end_date": "Present",
-                "is_current": True,
-            }],
+            experiences=[
+                {
+                    "company": "New company",
+                    "title": "New role",
+                    "start_date": "2024-02",
+                    "end_date": "Present",
+                    "is_current": True,
+                }
+            ],
             skills=["Rust"],
             headline="New headline",
             mode="replace",
@@ -409,11 +473,15 @@ def test_intake_application_restores_profile_review_state_and_note(tmp_path):
         db.add(candidate)
         db.commit()
         req = create_intake_request(db, candidate.id)
-        sub, message = submit_intake(db, req.token, {
-            "contact": {"email": "new@example.com"},
-            "skills": ["Spine"],
-            "jd_fit": {"availability": "Immediate"},
-        })
+        sub, message = submit_intake(
+            db,
+            req.token,
+            {
+                "contact": {"email": "new@example.com"},
+                "skills": ["Spine"],
+                "jd_fit": {"availability": "Immediate"},
+            },
+        )
         assert message == "ok"
         result = apply_intake_submission(db, sub.id, mode="replace")
         assert result["status"] == "success"

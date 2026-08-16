@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import List, Optional
+
 from sqlalchemy import (
     Boolean,
     DateTime,
@@ -12,8 +13,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.infrastructure.db import Base
 from app.candidates.models import Candidate
+from app.infrastructure.db import Base
 
 
 class CommunicationThread(Base):
@@ -63,6 +64,13 @@ class Communication(Base):
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=True)
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    provider_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    provider_message_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    failure_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    retry_eligible: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    delivery_key: Mapped[Optional[str]] = mapped_column(
+        String(64), unique=True, index=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False

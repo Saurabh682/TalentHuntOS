@@ -8,29 +8,15 @@ import json
 import logging
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
-from app.hunts.models import (
-    TalentHunt,
-    HuntStage,
-    HuntCandidate,
-    HuntActivity,
-)
-from app.candidates.models import (
-    Candidate,
-    CandidateProfile,
-    CandidateTag,
-)
-from app.communications.models import (
-    Communication,
-    CommunicationThread,
-    OutreachSequence,
-    OutreachEnrollment,
-)
+from app.candidates.models import Candidate, CandidateProfile
+from app.communications.models import Communication, OutreachSequence
+from app.hunts.models import HuntActivity, HuntCandidate, TalentHunt
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +106,17 @@ def get_kpi_summary(db: Session, hunt_id: Optional[int] = None) -> Dict[str, Any
 
         # Outreach communications query
         comm_stmt = select(Communication)
-        comms = list(db.scalars(comm_stmt).all())
+        if hunt_id:
+            candidate_ids = {
+                item.candidate_id for item in hunt_cands if item.candidate_id is not None
+            }
+            comms = (
+                list(db.scalars(comm_stmt.where(Communication.candidate_id.in_(candidate_ids))).all())
+                if candidate_ids
+                else []
+            )
+        else:
+            comms = list(db.scalars(comm_stmt).all())
         outbound_count = len([c for c in comms if c.direction == "outbound"])
         inbound_count = len([c for c in comms if c.direction == "inbound"])
         response_rate = round((inbound_count / outbound_count * 100), 1) if outbound_count > 0 else 0.0
@@ -396,8 +392,21 @@ def get_outreach_analytics(db: Session, hunt_id: Optional[int] = None) -> Dict[s
         Dict[str, Any]: A dictionary containing communication and outreach sequence metrics.
     """
     try:
+        candidate_ids: set[int] | None = None
+        if hunt_id:
+            from app.hunts.pipeline import list_active_hunt_candidates
+
+            candidate_ids = {
+                item.candidate_id
+                for item in list_active_hunt_candidates(db, hunt_id)
+                if item.candidate_id is not None
+            }
         comm_stmt = select(Communication)
-        comms = list(db.scalars(comm_stmt).all())
+        comms = (
+            list(db.scalars(comm_stmt.where(Communication.candidate_id.in_(candidate_ids))).all())
+            if candidate_ids is not None and candidate_ids
+            else ([] if candidate_ids is not None else list(db.scalars(comm_stmt).all()))
+        )
 
         channel_counts: Dict[str, int] = {
             "email": 0,
@@ -439,9 +448,18 @@ def get_outreach_analytics(db: Session, hunt_id: Optional[int] = None) -> Dict[s
         sequences = list(db.scalars(seq_stmt).all())
         sequence_perf: List[Dict[str, Any]] = []
         for seq in sequences:
-            total_enrolled = len(seq.enrollments)
-            replied = len([e for e in seq.enrollments if e.status == "replied"])
-            completed = len([e for e in seq.enrollments if e.status == "completed"])
+            enrollments = list(seq.enrollments)
+            if candidate_ids is not None:
+                enrollments = [
+                    enrollment
+                    for enrollment in enrollments
+                    if enrollment.candidate_id in candidate_ids
+                ]
+                if not enrollments:
+                    continue
+            total_enrolled = len(enrollments)
+            replied = len([e for e in enrollments if e.status == "replied"])
+            completed = len([e for e in enrollments if e.status == "completed"])
             rate = round((replied / total_enrolled * 100), 1) if total_enrolled > 0 else 0.0
             
             sequence_perf.append({
@@ -468,17 +486,20 @@ def get_outreach_analytics(db: Session, hunt_id: Optional[int] = None) -> Dict[s
         return {}
 
 
-def get_ai_cost_tracker(db: Session) -> Dict[str, Any]:
+def get_ai_cost_tracker(db: Session, hunt_id: Optional[int] = None) -> Dict[str, Any]:
     """Compute AI engine operations count, cloud API token cost vs local GGUF model cost savings.
 
     Args:
         db (Session): The SQLAlchemy database session.
+        hunt_id (Optional[int]): The ID of a specific hunt to filter by. Defaults to None.
 
     Returns:
         Dict[str, Any]: A dictionary containing AI usage and cost metrics.
     """
     try:
         activities_stmt = select(HuntActivity)
+        if hunt_id:
+            activities_stmt = activities_stmt.where(HuntActivity.hunt_id == hunt_id)
         activities = list(db.scalars(activities_stmt).all())
         
         ai_activities = _recorded_ai_activities(activities)
@@ -614,7 +635,7 @@ def get_all_analytics_data(db: Session, hunt_id: Optional[int] = None, days: int
         "velocity": get_time_to_fill_metrics(db, hunt_id=hunt_id),
         "sourcing": get_sourcing_quality_metrics(db, hunt_id=hunt_id),
         "outreach": get_outreach_analytics(db, hunt_id=hunt_id),
-        "ai_cost": get_ai_cost_tracker(db),
+        "ai_cost": get_ai_cost_tracker(db, hunt_id=hunt_id),
         "trends": get_trend_analytics(db, days=days, hunt_id=hunt_id),
     }
 

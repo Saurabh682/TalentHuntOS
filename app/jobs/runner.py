@@ -69,19 +69,46 @@ def start_profile_enrichment(
     def _worker() -> None:
         from app.candidates.discovery import import_approved_discovery
 
-        jobs.update_running_job(job_id, {"message": "Reading and extracting the approved profile..."})
+        jobs.begin_running_phase(
+            job_id,
+            "reading",
+            message="Reading and extracting the approved profile...",
+        )
+
+        def _cancelled() -> bool:
+            row = jobs.get_job_row(job_id)
+            return not row or row.status != "running"
+
         try:
-            result = import_approved_discovery(int(match_id), actor_type=actor_type)
+            result = import_approved_discovery(
+                int(match_id),
+                actor_type=actor_type,
+                cancel_check=_cancelled,
+                before_apply=lambda: jobs.begin_running_phase(
+                    job_id,
+                    "applying",
+                    message="Applying extracted evidence to the candidate profile...",
+                ),
+            )
             succeeded = result.get("status") == "success"
+            cancelled = result.get("status") == "cancelled"
             jobs.finish_job_record(
                 job_id,
-                status="done" if succeeded else "error",
+                status="done" if succeeded else ("cancelled" if cancelled else "error"),
                 message=(
                     f"Profile imported for {candidate_name}."
                     if succeeded
-                    else f"Deep scan failed for {candidate_name}."
+                    else (
+                        f"Deep scan cancelled for {candidate_name}."
+                        if cancelled
+                        else f"Deep scan failed for {candidate_name}."
+                    )
                 ),
-                error=None if succeeded else str(result.get("error") or "Profile scan failed"),
+                error=(
+                    None
+                    if succeeded or cancelled
+                    else str(result.get("error") or "Profile scan failed")
+                ),
                 result=result,
             )
         except Exception as exc:
@@ -108,6 +135,78 @@ def start_profile_enrichment(
     }
 
 
+def cancel_job(job_id: str) -> dict[str, Any]:
+    """Cancel one supported running workflow without overstating interruption."""
+    row = jobs.get_job_row(job_id)
+    if not row:
+        raise ValueError("Background job not found.")
+    if row.status != "running":
+        raise ValueError(f"Job {job_id} is already {row.status}.")
+    if row.kind == "sourcing":
+        from app.hunts.sourcing_jobs import request_cancel
+
+        if not request_cancel(job_id):
+            raise ValueError(f"Job {job_id} could not be cancelled.")
+        return {
+            "status": "cancelled",
+            "job_id": job_id,
+            "kind": row.kind,
+            "message": "Talent search cancelled. Background cleanup is finishing.",
+        }
+    if row.kind == "profile_enrichment":
+        outcome = jobs.cancel_job_before_phases(
+            job_id,
+            message="Deep scan cancelled. Approval was retained for Retry.",
+            blocked_phases={"applying"},
+        )
+        if not outcome["cancelled"]:
+            raise ValueError(str(outcome.get("reason") or "Deep scan could not be cancelled."))
+
+        from app.candidates.discovery import cancel_discovery_import
+
+        match_id = jobs.serialize_job(row).get("payload", {}).get("match_id")
+        if match_id:
+            cancel_discovery_import(int(match_id), "profile reading")
+        return {
+            "status": "cancelled",
+            "job_id": job_id,
+            "kind": row.kind,
+            "message": "Deep scan cancelled before candidate changes were applied.",
+        }
+    if row.kind == "site_connect":
+        from app.browser.connection_jobs import signal_cancel
+
+        if not signal_cancel(job_id):
+            raise ValueError("The visible login browser is no longer attached to this job.")
+        if not jobs.cancel_job(
+            job_id, message="Site login cancelled. Browser cleanup is finishing."
+        ):
+            raise ValueError(f"Job {job_id} could not be cancelled.")
+        return {
+            "status": "cancelled",
+            "job_id": job_id,
+            "kind": row.kind,
+            "message": "Site login cancelled. Browser cleanup is finishing.",
+        }
+    if row.kind == "site_verify":
+        if not jobs.cancel_job(
+            job_id,
+            message="Site login verification cancelled. Browser cleanup is finishing.",
+        ):
+            raise ValueError(f"Job {job_id} could not be cancelled.")
+        return {
+            "status": "cancelled",
+            "job_id": job_id,
+            "kind": row.kind,
+            "message": "Site login verification cancelled safely.",
+        }
+    if row.kind in {"embedded_ai_install", "embedded_ai_start"}:
+        from app.ai.embedded_jobs import cancel_embedded_ai_job
+
+        return cancel_embedded_ai_job(job_id)
+    raise ValueError(f"Job kind '{row.kind}' does not support cancellation yet.")
+
+
 def retry_job(job_id: str) -> dict[str, Any]:
     """Replay one supported terminal job from its immutable persisted payload."""
     original = jobs.get_retryable_job(job_id)
@@ -124,6 +223,14 @@ def retry_job(job_id: str) -> dict[str, Any]:
             parent_job_id=original["id"],
             attempt=int(original.get("attempt") or 1) + 1,
         )
+    if original["kind"] in {"site_connect", "site_verify"}:
+        from app.browser.connection_jobs import retry_site_job
+
+        return retry_site_job(original)
+    if original["kind"] in {"embedded_ai_install", "embedded_ai_start"}:
+        from app.ai.embedded_jobs import retry_embedded_ai_job
+
+        return retry_embedded_ai_job(original)
     raise ValueError(f"Job kind '{original['kind']}' does not support Retry yet.")
 
 

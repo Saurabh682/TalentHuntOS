@@ -337,6 +337,9 @@ def execute_action(
                 input_payload=input_payload,
                 ctx=ctx,
             )
+            # Approval-gated handlers may read the immutable persisted preview, but
+            # they never receive the raw token or trust model-supplied rendered data.
+            ctx.metadata["approval_id"] = approval_id
         except Exception as exc:
             release_lease()
             return ActionResult(
@@ -349,6 +352,7 @@ def execute_action(
     execution_id: int | None = None
     try:
         from sqlalchemy import select
+
         from app.actions.models import ActionExecution
         from app.infrastructure.db import SessionFactory
 
@@ -412,9 +416,9 @@ def execute_action(
 
     # Handler execution
     try:
-        import inspect
         import asyncio
         import concurrent.futures
+        import inspect
 
         if inspect.iscoroutinefunction(spec.handler):
             try:

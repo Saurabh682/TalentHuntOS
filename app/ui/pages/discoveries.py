@@ -125,7 +125,9 @@ def render_discoveries() -> None:
                                 elif match_statuses:
                                     ui.badge(match_statuses[0]).props(
                                         "outline color=blue-grey"
-                                    ).classes("text-[10px]")
+                                    ).classes("text-[10px]").style(
+                                        "color:#91a8b7!important"
+                                    )
                             ui.label(profile.headline or "Headline unavailable").classes(
                                 "text-xs text-slate-300"
                             )

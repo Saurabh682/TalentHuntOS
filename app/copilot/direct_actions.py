@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import threading
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from app.config.constants import MAX_SOURCING_TARGET
 
@@ -145,9 +144,9 @@ def run_confirmed_hunt_clear(
             return f"Hunt #{hunt_id} no longer exists. Nothing was removed."
         current_count = int(
             db.scalar(
-                select(func.count()).select_from(HuntCandidate).where(
-                    HuntCandidate.hunt_id == hunt_id
-                )
+                select(func.count())
+                .select_from(HuntCandidate)
+                .where(HuntCandidate.hunt_id == hunt_id)
             )
             or 0
         )
@@ -178,9 +177,9 @@ def run_confirmed_hunt_clear(
     with SessionFactory() as verify_db:
         remaining = int(
             verify_db.scalar(
-                select(func.count()).select_from(HuntCandidate).where(
-                    HuntCandidate.hunt_id == hunt_id
-                )
+                select(func.count())
+                .select_from(HuntCandidate)
+                .where(HuntCandidate.hunt_id == hunt_id)
             )
             or 0
         )
@@ -270,13 +269,66 @@ def parse_global_candidate_delete(text: str) -> Optional[Dict[str, Any]]:
     )
     if not (mentions_candidates and global_scope):
         return None
-    confirm = any(word in low for word in ("confirm", "confirmed", "yes, delete", "do it", "proceed"))
+    confirm = any(
+        word in low for word in ("confirm", "confirmed", "yes, delete", "do it", "proceed")
+    )
     return {"confirm": confirm}
+
+
+def parse_common_pool_archive(text: str) -> Optional[Dict[str, Any]]:
+    """Detect an explicit broad clear/delete request scoped to Discoveries."""
+    low = re.sub(r"\s+", " ", (text or "").strip().lower())
+    if not low or not any(word in low for word in ("archive", "clear", "delete", "remove", "wipe")):
+        return None
+    discoveries_scope = "discover" in low or "common pool" in low
+    mentions_records = any(
+        word in low for word in ("candidate", "profile", "people", "person", "pool")
+    )
+    explicit_scope_clear = any(
+        phrase in low
+        for phrase in (
+            "clear discoveries",
+            "clear the discoveries",
+            "wipe discoveries",
+            "empty discoveries",
+            "clear common pool",
+            "empty common pool",
+        )
+    )
+    broad_scope = bool(re.search(r"\b(all|every|entire|whole)\b", low)) or explicit_scope_clear
+    if discoveries_scope and broad_scope and (mentions_records or explicit_scope_clear):
+        return {}
+    return None
+
+
+def run_common_pool_archive_preview(*, session_id: str) -> str:
+    """Create a trusted Common Pool archive preview without requiring an LLM."""
+    from app.actions.api import dispatch_preview
+
+    result = dispatch_preview(
+        "discoveries.common_pool.archive",
+        {},
+        actor_type="agent",
+        session_id=session_id,
+    )
+    if not result.success:
+        return result.error or "The Discoveries archive preview could not be created."
+    preview = (result.data or {}).get("preview") or {}
+    count = int(preview.get("profile_count") or 0)
+    preserved = int(preview.get("linked_candidates_preserved") or 0)
+    return (
+        f"Prepared a trusted preview to archive **{count} Discoveries profile(s)**. "
+        f"**{preserved} linked canonical Candidate record(s) will be preserved**. "
+        "Nothing has been changed yet. Review the approval card and select **Approve** "
+        "to continue or **Cancel** to leave the pool unchanged. After approval, the action "
+        "can be undone for **7 days**."
+    )
 
 
 def run_global_candidate_delete(*, session_id: str, confirm: bool = False) -> str:
     """Preview or archive every visible candidate and record a reversible action."""
     from sqlalchemy import func, select, update
+
     from app.actions.history import record_action
     from app.candidates.models import Candidate
     from app.infrastructure.db import SessionFactory
@@ -294,9 +346,7 @@ def run_global_candidate_delete(*, session_id: str, confirm: bool = False) -> st
         candidate_ids = [candidate.id for candidate in candidates]
         previous = {str(candidate.id): candidate.status for candidate in candidates}
         result = db.execute(
-            update(Candidate)
-            .where(Candidate.id.in_(candidate_ids))
-            .values(status="Archived")
+            update(Candidate).where(Candidate.id.in_(candidate_ids)).values(status="Archived")
         )
         if result.rowcount != len(candidate_ids):
             db.rollback()
@@ -314,19 +364,22 @@ def run_global_candidate_delete(*, session_id: str, confirm: bool = False) -> st
             session_id=session_id,
         )
     with SessionFactory() as verify_db:
-        archived = verify_db.scalar(
-            select(func.count()).select_from(Candidate).where(
-                Candidate.id.in_(candidate_ids), Candidate.status == "Archived"
+        archived = (
+            verify_db.scalar(
+                select(func.count())
+                .select_from(Candidate)
+                .where(Candidate.id.in_(candidate_ids), Candidate.status == "Archived")
             )
-        ) or 0
+            or 0
+        )
     if archived != len(candidate_ids):
         return (
             f"Delete did not pass post-commit verification: {archived} of {len(candidate_ids)} "
             "records are archived. The operation must not be reported as successful."
         )
     return (
-            f"Archived **{len(candidates)} candidates**. Action **#{item.id}** is undoable for 7 days. "
-            "Say **undo that** or use Action history. <!-- ui-refresh:candidates -->"
+        f"Archived **{len(candidates)} candidates**. Action **#{item.id}** is undoable for 7 days. "
+        "Say **undo that** or use Action history. <!-- ui-refresh:candidates -->"
     )
 
 
@@ -349,11 +402,11 @@ def run_clear_and_source(
     platforms: Optional[list[str]] = None,
 ) -> str:
     """Optionally clear a pipeline and start approval-gated web discovery."""
-    from app.infrastructure.db import SessionFactory
-    from app.hunts.service import get_hunt
-    from app.hunts.pipeline import clear_hunt_candidates
-    from app.hunts.web_sourcing import source_candidates_for_hunt
     from app.hunts import sourcing_jobs
+    from app.hunts.pipeline import clear_hunt_candidates
+    from app.hunts.service import get_hunt
+    from app.hunts.web_sourcing import source_candidates_for_hunt
+    from app.infrastructure.db import SessionFactory
 
     hid = resolve_hunt_id(session_id, hunt_id)
     if not hid:
@@ -428,7 +481,10 @@ def run_clear_and_source(
     bits = []
     if clear:
         bits.append(f"Cleared **{removed}** pipeline enrollment(s) from **{hunt_title}**.")
-    source_label = ", ".join(platform.capitalize() for platform in (platforms or [])) or "all configured sources"
+    source_label = (
+        ", ".join(platform.capitalize() for platform in (platforms or []))
+        or "all configured sources"
+    )
     bits.append(
         f"Started discovery for **{hunt_title}** on **{source_label}** - finding up to **{target}** profiles "
         "for recruiter review. Watch the orange banner; "

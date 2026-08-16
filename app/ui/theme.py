@@ -123,7 +123,8 @@ CURRENT_THEME_KEY = "modern_ocean"
 
 def get_theme_css(scheme_key: str = "modern_ocean") -> str:
     s = COLOR_SCHEMES.get(scheme_key, COLOR_SCHEMES["modern_ocean"])
-    return f"""
+    return (  # CSS interpolation; Bandit B608 is tracked as a report-only false positive.
+        f"""
 :root {{
   --th-bg: {s['bg']};
   --th-surface: {s['surface']};
@@ -298,6 +299,11 @@ html, body, #app, #q-app {{
   color: #dce7eb !important;
 }}
 
+button.q-btn.th-slate-btn {{
+  background: #0d1b28 !important;
+  color: #dce7eb !important;
+}}
+
 .th-tab {{
   padding: 9px 11px !important;
   background: #0e1c29 !important;
@@ -310,6 +316,11 @@ html, body, #app, #q-app {{
 .th-tab-on {{
   background: #16434a !important;
   color: #bffff8 !important;
+}}
+
+button.q-btn.th-tab-on, button.q-btn.th-tab-on * {{ color: #bffff8 !important; }}
+button.q-btn.bg-primary.text-white, button.q-btn.bg-primary.text-white * {{
+  color: #071019 !important;
 }}
 
 .th-pill {{
@@ -646,10 +657,18 @@ button:disabled, .q-btn--disabled, input:disabled {{
 }}
 
 .q-message-stamp {{
-  color: {s['muted']} !important;
+  color: #91a8b7 !important;
   font-size: 10px !important;
   margin-top: 4px !important;
+  opacity: 1 !important;
 }}
+
+.text-slate-500, .text-slate-600 {{ color: #91a8b7 !important; }}
+.q-badge.q-badge.bg-teal, .q-badge.q-badge.bg-positive, .q-badge.q-badge.bg-orange,
+.q-badge.q-badge.bg-primary {{ color: #071019 !important; }}
+.q-badge.q-badge.bg-blue-grey {{ background: #344954 !important; }}
+.q-badge.q-badge.bg-blue-grey.text-teal-300 {{ color: #a7f3e8 !important; }}
+.q-badge.q-badge.q-badge--outline.text-blue-grey {{ color: #91a8b7 !important; }}
 
 .custom-scrollbar::-webkit-scrollbar, ::-webkit-scrollbar {{
   width: 6px;
@@ -961,7 +980,7 @@ button:disabled, .q-btn--disabled, input:disabled {{
 }}
 .th-candidate-row-meta {{
   overflow: hidden;
-  color: #637f91;
+  color: #91a8b7;
   font-size: 9px;
   line-height: 15px;
   text-overflow: ellipsis;
@@ -1010,7 +1029,7 @@ button:disabled, .q-btn--disabled, input:disabled {{
   height: 16px;
   flex: 0 0 16px;
   border-radius: 3px;
-  background: #2979ff;
+  background: #0a66c2;
   color: white !important;
   font-size: 9px;
   font-weight: 800;
@@ -1100,7 +1119,7 @@ button:disabled, .q-btn--disabled, input:disabled {{
   border: 1px solid #243b4b;
   border-radius: 6px;
 }}
-.th-contact-label {{ color: #617c8e; font-size: 8px; text-transform: uppercase; }}
+.th-contact-label {{ color: #91a8b7; font-size: 8px; text-transform: uppercase; }}
 .th-contact-value {{ overflow: hidden; color: #d4e0e5; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }}
 .th-decision-grid {{
   display: grid !important;
@@ -1118,6 +1137,9 @@ button:disabled, .q-btn--disabled, input:disabled {{
 .th-decision-grid button.q-btn.th-decision-shortlist {{ background-color: #0b8066 !important; color: white !important; }}
 .th-decision-grid button.q-btn.th-decision-maybe {{ border: 1px solid #9d7728 !important; background-color: #3a2d13 !important; color: #f0c96e !important; }}
 .th-decision-grid button.q-btn.th-decision-mismatch {{ border: 1px solid #7f3843 !important; background-color: #321923 !important; color: #ee9ba4 !important; }}
+.th-decision-grid button.q-btn.th-decision-shortlist * {{ color: white !important; }}
+.th-decision-grid button.q-btn.th-decision-maybe * {{ color: #f0c96e !important; }}
+.th-decision-grid button.q-btn.th-decision-mismatch * {{ color: #ee9ba4 !important; }}
 
 .th-insight-section {{ padding: 16px 20px 18px; }}
 .th-candidate-section-heading {{ width: 100%; align-items: center; justify-content: space-between; gap: 10px; }}
@@ -1144,7 +1166,7 @@ button:disabled, .q-btn--disabled, input:disabled {{
   background: #0b1a25;
 }}
 .th-evidence-value {{ overflow: hidden; color: #77dbd0; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }}
-.th-evidence-source {{ margin-top: 2px; color: #627f91; font-size: 8px; }}
+.th-evidence-source {{ margin-top: 2px; color: #91a8b7; font-size: 8px; }}
 .th-evidence-empty {{
   display: flex !important;
   grid-column: 1 / -1;
@@ -1301,6 +1323,7 @@ button:disabled, .q-btn--disabled, input:disabled {{
   .th-evidence-row {{ grid-template-columns: 1fr; gap: 7px; }}
 }}
 """
+    )
 
 def apply_theme(scheme_key: str | None = None):
     """Inject active theme styles into NiceGUI."""
@@ -1309,5 +1332,53 @@ def apply_theme(scheme_key: str | None = None):
         CURRENT_THEME_KEY = scheme_key
     ui.dark_mode(True)
     ui.add_head_html(f'<style>{get_theme_css(CURRENT_THEME_KEY)}</style>', shared=True)
+    ui.add_head_html(
+        r"""<script>
+(() => {
+  document.documentElement.lang = 'en';
+  if (window.__talenthuntAccessibilityObserver) return;
+  const iconLabels = {
+    add: 'Add', arrow_back: 'Go back', arrow_forward: 'Move forward',
+    arrow_upward: 'Send message', auto_awesome: 'Run AI action',
+    check: 'Confirm', close: 'Close', content_copy: 'Copy', dashboard: 'Dashboard',
+    delete: 'Delete', delete_outline: 'Delete', edit: 'Edit', forum: 'Communications',
+    group: 'Candidates', history: 'Prompt history', insights: 'Analytics',
+    manage_history: 'Action history and undo', menu_book: 'Playbook',
+    mic: 'Voice input', more_vert: 'More actions', open_in_full: 'Expand Copilot',
+    open_in_new: 'Open related page in a new tab', pause: 'Pause',
+    person_search: 'Discoveries', play_arrow: 'Resume', refresh: 'Clear conversation',
+    settings: 'Settings', smart_toy: 'Open Copilot', stop: 'Cancel active work',
+    travel_explore: 'Hunts', undo: 'Undo action', view_kanban: 'Pipeline',
+    volume_off: 'Enable voice replies', volume_up: 'Mute voice replies'
+  };
+  const nameIconButtons = (root = document) => {
+    const buttons = root.querySelectorAll ? root.querySelectorAll('button:not([aria-label])') : [];
+    buttons.forEach((button) => {
+      const content = button.querySelector('.q-btn__content');
+      const icon = content?.querySelector('.q-icon');
+      if (!icon) return;
+      const visibleLabel = content.querySelector('.block')?.textContent?.trim();
+      if (visibleLabel) return;
+      const iconName = icon.textContent?.trim();
+      if (!iconName) return;
+      const tooltip = button.querySelector('.q-tooltip')?.textContent?.trim();
+      const fallback = iconName.replaceAll('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      button.setAttribute('aria-label', tooltip || iconLabels[iconName] || fallback);
+    });
+    root.querySelectorAll?.('.q-table__middle:not([tabindex])').forEach((region) => {
+      region.tabIndex = 0;
+      region.setAttribute('role', 'region');
+      region.setAttribute('aria-label', 'Scrollable data table');
+    });
+  };
+  nameIconButtons();
+  window.__talenthuntAccessibilityObserver = new MutationObserver(() => nameIconButtons());
+  window.__talenthuntAccessibilityObserver.observe(document.documentElement, {
+    childList: true, subtree: true
+  });
+})();
+</script>""",
+        shared=True,
+    )
     # NOTE: Do NOT inject the raw design-pack styles.css — generic .btn/.card/.main
     # selectors collide with Quasar/NiceGUI and stretch the layout.

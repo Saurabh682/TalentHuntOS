@@ -12,7 +12,13 @@ def ensure_core_actions_registered() -> None:
     # Register both sides of cross-domain ORM relationships before an action opens a
     # session. Copilot adapters can be invoked from a cold worker without app.main.
     import app.hunts.models  # noqa: F401
-    from app.actions import recruiting  # noqa: F401
+    from app.actions import (
+        ai_runtime,  # noqa: F401
+        communications,  # noqa: F401
+        recruiting,  # noqa: F401
+        reports,  # noqa: F401
+        sites,  # noqa: F401
+    )
 
 
 def dispatch_action(
@@ -141,7 +147,9 @@ def cancel_approval(
 
         user_id = get_active_admin_id()
     if user_id is None:
-        return ActionResult(success=False, error="Authentication required.", action_name="actions.cancel")
+        return ActionResult(
+            success=False, error="Authentication required.", action_name="actions.cancel"
+        )
     from app.actions.approvals import cancel_pending_approval
 
     try:

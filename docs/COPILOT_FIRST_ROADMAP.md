@@ -28,6 +28,9 @@ Implemented first slice (2026-08-11):
   Startup truthfully marks orphaned runs interrupted and retryable instead of losing them.
 - Added typed `jobs.retry` parity for Copilot and UI, immutable retry payload replay,
   attempt lineage, and durable approved-profile enrichment with restart reconciliation.
+- Added typed `jobs.list`, `jobs.get`, and exact-ID `jobs.cancel` parity, a compact Copilot
+  Jobs monitor, and a truthful enrichment phase gate that prevents cancellation after
+  canonical Candidate application begins.
 - Added Candidate/Discovery query parity: Candidate list/search, Discovery list/detail,
   and permanent Common Pool search now use bounded typed R0 actions.
 - Added reversible Candidate archive, tag add/remove, and recruiter-note actions; matching
@@ -41,6 +44,10 @@ Implemented first slice (2026-08-11):
 - Added typed Candidate creation parity for UI and Copilot with identity-conflict refusal,
   optional Hunt enrollment, and dependency-aware Undo. Candidate detail now imports bounded
   local PDF/DOCX/TXT resumes into the reviewed profile-apply workflow without retaining the file.
+- Added Hunt lifecycle and Pipeline parity, including typed reads, reversible creation,
+  updates, status, enrollment, movement, triage, removal, and stage creation.
+- Added Playbook read/add parity and Intake link/list/review parity. Reviewed Intake profile
+  application and status changes now commit atomically with exact seven-day Undo.
 - Automatic resume, migration of reports/outreach, and remaining domain parity are pending.
 
 ## 1. Product Definition
@@ -72,22 +79,23 @@ The current strengths are:
 - Streaming model responses with bounded output and incremental TTS.
 - Background, cancellable sourcing while normal chat remains available.
 - Useful tools for Hunt lifecycle, sourcing, pipeline triage, profile enrichment,
-  intake review, connected-site status, and action-history undo.
+  intake review, connected-site lifecycle, and action-history undo.
 - A seven-day action ledger with tested inverse operations for selected mutations.
 - A typed action registry and `ActionContext` design containing identity, scopes,
   approval token, idempotency key, and undo metadata.
 
 The main architectural problem is fragmentation:
 
-- Eight typed actions are generated from the shared registry: six representative recruiting
-  actions plus `actions.undo` and `jobs.retry`. Every production tool now has a structured call record, while
-  the remaining legacy workflow tools still call services directly and return mostly
-  untyped JSON strings.
+- Registered recruiting actions are generated from the shared registry, including the
+  Candidate, Discovery, Common Pool, Pipeline, Hunt, Playbook, Intake, Undo, and job-retry
+  families. Every production tool has a structured call record, while remaining legacy
+  workflow tools still call services directly and return mostly untyped JSON strings.
 - Hunt archive now uses a trusted, action-bound UI approval. Other sensitive tools that
   still accept model-supplied confirmation must be migrated to the same policy.
 - UI handlers and Copilot tools independently implement the same operations.
 - The action ledger covers only selected mutations, so history is not a complete record.
-- Sourcing jobs are held in process memory and disappear when the application restarts.
+- Sourcing and approved-profile enrichment jobs are durable and restart-truthful; other
+  long-running report, outreach, indexing, and import workflows still need migration.
 - Conversations are stored in a JSON file while actions live in SQLite and semantic
   memories live in ChromaDB, preventing one transactional execution timeline.
 - A legacy three-intent orchestrator is disconnected from production and contains stale
@@ -104,15 +112,15 @@ The main architectural problem is fragmentation:
 | Sourcing | Strongest area | Durable jobs, per-source controls, retry failed source, scheduled runs, result provenance query |
 | Common Pool / Discoveries | Core single-record parity | Bulk review, richer provenance filters, retry source |
 | Candidates | Strong single-record parity, create, resume import, duplicate review/merge | Bulk maintenance and richer artifact provenance |
-| Pipeline | Partial to strong | List scoped rows/stages, add stage, remove one with undo, bulk move, score/reason updates |
-| Playbook | Read-oriented | Add/edit insight, inspect candidate decision history, reuse a query explicitly |
-| Communications | Draft only | Threads, templates, delivery, status updates, sequences, enroll/pause/resume, due-step processing |
-| Intake | Good partial coverage | Resend/revoke/expire link, compare submission diff, batch review |
-| Analytics | None | Query KPIs/funnels/quality/cost/trends, explain metrics, export CSV/PDF/Excel |
+| Pipeline | Strong | Bulk move and explicit score/reason updates |
+| Playbook | Core read/add parity | Edit insight, inspect one Candidate decision history, reuse a query explicitly |
+| Communications | Strong local management | R4 approved delivery with rendered-recipient preview, provider receipts, duplicate-send protection |
+| Intake | Core create/list/review parity | Resend/revoke/expire link, richer submission diff, batch review |
+| Analytics | Strong canonical reads | Explain metrics and export CSV/PDF/Excel artifacts |
 | Settings | Minimal | AI/TTS preferences, SMTP setup/test, feature flags, theme, model status, safe key management |
-| Connected sites | Read/disconnect | Interactive connect, reconnect, verify, test session, explain failure and retry |
+| Connected sites | Strong | CAPTCHA handling and secret disclosure remain intentionally unavailable |
 | Action history | Partial | Complete event coverage, per-step details, filtering, universal inverse/compensation |
-| Background work | Sourcing only | General durable job manager for enrichment, reports, outreach, indexing, imports |
+| Background work | Sourcing, profile enrichment, site login, and site verification | Reports, outreach, indexing, and imports |
 | Administration | Intentionally limited | Health diagnostics, backup/export, migration status; password reset stays local-only |
 
 ## 4. Safety Model
@@ -190,9 +198,10 @@ startup recovery. Normal chat must remain available while jobs run.
 
 Current status: sourcing and approved-profile enrichment use the shared durable schema and
 persistence service. Restart recovery marks vanished workers `interrupted`, releases the
-sourcing singleton, and reconciles visible Discovery state. Explicit Retry replays immutable
-stored parameters into a linked attempt through `jobs.retry`. Automatic resume and the
-remaining report/outreach/indexing job families are still open, so this section is not complete.
+sourcing singleton, and reconciles visible Discovery state. Copilot and UI share bounded
+list/detail, exact-ID cancellation, and immutable linked Retry actions. Enrichment cancellation
+is accepted only before its atomic Candidate-apply phase. Automatic resume and the remaining
+report/outreach/indexing job families are still open, so this section is not complete.
 
 ### 5.4 Copilot action UI
 
@@ -379,6 +388,68 @@ custom-stage creation. All local writes have tested seven-day inverses, preserve
 Pool Candidate, use affected-resource locks, and appear in the shared action history. The
 remaining roadmap work is Hunt create/edit/status parity, broader Playbook and Intake
 commands, Communications, Dashboard/Analytics reads, multi-step plans, and release hardening.
+
+Hunt lifecycle parity update: complete. Canonical R0 reads and reversible R2 create,
+partial update, and status actions now back both the UI and Copilot. Launch keeps sourcing
+asynchronous after the audited local create step, pristine Hunt creation can be undone, and
+archive remains an R3 trusted-approval action. Remaining work is broader Playbook and Intake
+parity, Communications, Dashboard/Analytics action reads, multi-step plans, and hardening.
+
+Playbook and Intake core parity update: complete. Playbook list/add and Intake link creation,
+pending-submission listing, acceptance, and rejection now share typed UI/Copilot actions.
+Local writes are audited and reversible for seven days, and reviewed Intake application is
+atomic with its request/submission state transition. Remaining Playbook/Intake work is edit,
+explicit query reuse, resend/revoke/expire, richer diffs, and batch review; the next major
+roadmap slice is Communications parity.
+
+Analytics read parity update: complete. Seven typed R0 actions now expose canonical KPI,
+funnel, sourcing-quality, time-to-fill, outreach, AI usage/cost availability, and bounded
+trend data through generated Copilot tools. Results include service/table/filter provenance
+and explicit telemetry limitations. Hunt-scoped communication, sequence, and AI-operation
+counts no longer leak global totals. Report artifact generation remains separate Phase 4
+work; the next implementation slice is Communications action parity.
+
+Communications local parity update: complete. Fourteen generated actions now cover log reads
+and historical recording, stored-status correction, template lifecycle, sequence lifecycle,
+draft-step creation, paused enrollment, and enrollment pause/resume/closure. All local writes
+are resource-locked, audited, and reversible for seven days. The Communications UI dispatches
+the same actions and has no unapproved direct email or due-step delivery path. New enrollments
+start paused; actual delivery is handled only by the R4 action described below.
+
+Communications approved-delivery update: complete for SMTP email. Two additional generated
+actions list due rendered messages without sending and request one exact R4 email approval.
+The authenticated approval card shows sender, recipient, CC, subject, full body, and one-recipient
+count. Execution commits a pending attempt before SMTP, records the provider message ID or failure,
+blocks confirmed duplicates and unresolved attempts, and advances a sequence only after delivery.
+External sends are irreversible and never claim seven-day Undo. Phase 3 remains open for inbound
+mail and separately reviewed non-email providers.
+
+Background-job control update: complete for sourcing and approved-profile enrichment. Four
+generated `jobs.*` actions provide bounded history, exact status, one-job cancellation, and
+linked Retry. The Copilot Jobs monitor uses those same controls, while its active-search banner
+now cancels the displayed durable ID rather than calling a global subsystem bypass. Cancellation
+before enrichment apply prevents Candidate mutation; cancellation after apply begins is refused.
+Connected-site parity update: complete. Six generated `sites.*` actions now provide sanitized
+status, non-blocking visible-browser Connect/Reconnect, background verification, exact-job Save,
+and R3 approved Disconnect. Settings dispatches the same actions; site work appears in the shared
+Jobs monitor with Cancel and linked Retry. Passwords, cookies, headers, and internal launch
+payloads never enter Copilot output.
+
+Analytics report-artifact update: complete. Three generated `reports.*` actions create,
+list, and inspect canonical CSV/XLSX/PDF artifacts. Analytics UI exports use the same action,
+files stay beneath a fixed local directory, and authenticated opaque-ID downloads verify the
+stored size and SHA-256 before serving. Report provenance records scope and renderer identity;
+spreadsheet and PDF output neutralize untrusted formula or markup content. The next Phase 4
+slice is non-secret preference and TTS/model health actions.
+
+Embedded Local Copilot Runtime update: complete for the default Windows x64 CPU path. The
+desktop build bundles a pinned and component-verified llama.cpp runtime; Settings and Copilot
+share five generated actions for sanitized status, explicit verified model installation,
+Lite/Standard/External configuration, app-owned start, and app-owned stop. Install and startup
+are durable cancellable/retryable jobs, configuration is undoable for seven days, and startup
+never performs an implicit download. IBM Granite 4.1 3B Q4_K_M is pinned by immutable revision,
+size, and SHA-256 and is fully verified before launch. LM Studio, Ollama, and cloud providers
+remain optional. TTS preference parity and broader release/hardware benchmarks remain open.
 
 ## 9. Definition Of Copilot-First Complete
 

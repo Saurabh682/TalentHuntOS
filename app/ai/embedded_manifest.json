@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "runtime": {
+    "id": "llama.cpp-b10430-win-cpu-x64",
+    "name": "llama.cpp CPU runtime",
+    "version": "b10430",
+    "platform": "windows-x86_64",
+    "license": "MIT",
+    "file_name": "llama-b10430-bin-win-cpu-x64.zip",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10430/llama-b10430-bin-win-cpu-x64.zip",
+    "size_bytes": 18459208,
+    "sha256": "63988c0e4a2527cf9a90c229de0199201f7ba5957c06c92dacc1c96e4c0851d7",
+    "installed_manifest_size_bytes": 4719,
+    "installed_manifest_sha256": "e568b918af4bbab97ee43fd185f732f3380d7c9adb7ef6d0bd86019a19a07d9b",
+    "executable": "llama-server.exe"
+  },
+  "model": {
+    "id": "ibm-granite/granite-4.1-3b-GGUF:Q4_K_M",
+    "name": "IBM Granite 4.1 3B",
+    "revision": "ab4701481089b58a082ef63cc1cee738887293ff",
+    "license": "Apache-2.0",
+    "quantization": "Q4_K_M",
+    "file_name": "granite-4.1-3b-Q4_K_M.gguf",
+    "url": "https://huggingface.co/ibm-granite/granite-4.1-3b-GGUF/resolve/ab4701481089b58a082ef63cc1cee738887293ff/granite-4.1-3b-Q4_K_M.gguf?download=true",
+    "size_bytes": 2099501664,
+    "sha256": "662b0626cd58f443baea23559b469df6576a81d349649c59413b36a9fb32eb29"
+  }
+}

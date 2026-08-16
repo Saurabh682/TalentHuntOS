@@ -122,6 +122,7 @@ def add_insight(
     hunt_id: Optional[int] = None,
     hunt_title: Optional[str] = None,
     author_name: str = "Recruiter",
+    commit: bool = True,
 ) -> PlaybookEntry:
     return _create_entry(
         db,
@@ -134,6 +135,7 @@ def add_insight(
         hunt_title=hunt_title,
         note=note,
         author_name=author_name,
+        commit=commit,
     )
 
 

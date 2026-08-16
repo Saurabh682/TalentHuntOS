@@ -23,12 +23,14 @@ def test_web_app_is_restricted_to_canonical_port():
 
 
 def test_private_data_directory_is_not_mounted():
-    import app.main  # noqa: F401
-    from nicegui import app
+    from nicegui import app as nicegui_app
 
-    route_paths = {getattr(route, "path", None) for route in app.routes}
+    import app.main as app_main  # noqa: F401
+
+    route_paths = {getattr(route, "path", None) for route in nicegui_app.routes}
     assert "/data" not in route_paths
     assert any(path and path.startswith("/profile-snapshots") for path in route_paths)
+    assert "/api/reports/{artifact_id}" in route_paths
 
 
 def test_intake_request_accepts_only_one_submission():
@@ -55,13 +57,20 @@ def test_intake_request_accepts_only_one_submission():
 
 
 def test_sensitive_copilot_tools_default_to_preview():
+    from app.actions.api import ensure_core_actions_registered
+    from app.actions.registry import get_action
     from app.copilot.mgmt_tools import apply_intake_submission, disconnect_site
 
     apply_result = json.loads(apply_intake_submission.invoke({"submission_id": "123"}))
-    disconnect_result = json.loads(disconnect_site.invoke({"platform": "linkedin"}))
+    disconnect_result = json.loads(
+        disconnect_site.invoke({"platform": "linkedin", "confirm": True})
+    )
 
     assert apply_result["status"] == "preview"
-    assert disconnect_result["status"] == "preview"
+    assert disconnect_result["status"] == "error"
+    assert "trusted preview" in disconnect_result["error"]
+    ensure_core_actions_registered()
+    assert get_action("sites.disconnect").requires_approval is True
 
 
 def test_connection_status_initializes_all_database_models(monkeypatch):

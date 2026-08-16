@@ -7,11 +7,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import aliased
 
 from app.jobs.models import BackgroundJob
-
 
 TERMINAL_STATUSES = {"done", "cancelled", "error", "interrupted"}
 RETRYABLE_STATUSES = {"cancelled", "error", "interrupted"}
@@ -92,7 +92,13 @@ def get_job_row(job_id: str) -> BackgroundJob | None:
         return db.get(BackgroundJob, job_id)
 
 
-def list_job_rows(*, statuses: set[str] | None = None) -> list[BackgroundJob]:
+def list_job_rows(
+    *,
+    statuses: set[str] | None = None,
+    kind: str | None = None,
+    hunt_id: int | None = None,
+    limit: int | None = None,
+) -> list[BackgroundJob]:
     from app.infrastructure import db as dbinfra
 
     dbinfra.init_db()
@@ -100,21 +106,54 @@ def list_job_rows(*, statuses: set[str] | None = None) -> list[BackgroundJob]:
         stmt = select(BackgroundJob).order_by(BackgroundJob.started_at.desc())
         if statuses:
             stmt = stmt.where(BackgroundJob.status.in_(sorted(statuses)))
+        if kind:
+            stmt = stmt.where(BackgroundJob.kind == kind)
+        if hunt_id is not None:
+            stmt = stmt.where(BackgroundJob.hunt_id == int(hunt_id))
+        if limit is not None:
+            stmt = stmt.limit(max(1, int(limit)))
         return list(db.scalars(stmt).all())
 
 
 def get_retryable_job(job_id: str) -> dict[str, Any]:
-    row = get_job_row(job_id)
-    if not row:
-        raise ValueError("Background job not found.")
-    if row.status not in RETRYABLE_STATUSES or not row.retryable:
-        raise ValueError(f"Job {job_id} in status '{row.status}' cannot be retried.")
-    return serialize_job(row)
+    from app.infrastructure import db as dbinfra
+
+    dbinfra.init_db()
+    with dbinfra.SessionFactory() as db:
+        row = db.get(BackgroundJob, job_id)
+        if not row:
+            raise ValueError("Background job not found.")
+        child_exists = db.scalar(
+            select(
+                exists().where(BackgroundJob.parent_job_id == row.id)
+            )
+        )
+        if child_exists:
+            raise ValueError(f"Job {job_id} already has a newer retry attempt.")
+        if row.status not in RETRYABLE_STATUSES or not row.retryable:
+            raise ValueError(f"Job {job_id} in status '{row.status}' cannot be retried.")
+        return serialize_job(row)
 
 
 def list_retryable_jobs(*, limit: int = 5) -> list[dict[str, Any]]:
-    rows = list_job_rows(statuses=RETRYABLE_STATUSES)
-    return [serialize_job(row) for row in rows if row.retryable][: max(1, int(limit))]
+    from app.infrastructure import db as dbinfra
+
+    dbinfra.init_db()
+    child = aliased(BackgroundJob)
+    with dbinfra.SessionFactory() as db:
+        rows = list(
+            db.scalars(
+                select(BackgroundJob)
+                .where(
+                    BackgroundJob.status.in_(sorted(RETRYABLE_STATUSES)),
+                    BackgroundJob.retryable.is_(True),
+                    ~exists().where(child.parent_job_id == BackgroundJob.id),
+                )
+                .order_by(BackgroundJob.started_at.desc())
+                .limit(max(1, int(limit)))
+            ).all()
+        )
+        return [serialize_job(row) for row in rows]
 
 
 def update_running_job(job_id: str, fields: dict[str, Any]) -> bool:
@@ -137,6 +176,70 @@ def update_running_job(job_id: str, fields: dict[str, Any]) -> bool:
         row.heartbeat_at = now
         db.commit()
         return True
+
+
+def begin_running_phase(
+    job_id: str,
+    phase: str,
+    *,
+    message: str | None = None,
+) -> bool:
+    """Atomically enter a worker phase only while cancellation is still allowed."""
+    from app.infrastructure import db as dbinfra
+
+    dbinfra.init_db()
+    now = _now()
+    with dbinfra.SessionFactory() as db:
+        row = db.get(BackgroundJob, job_id)
+        if not row or row.status != "running" or row.cancel_requested_at is not None:
+            return False
+        progress = _loads(row.progress_json)
+        progress["phase"] = phase.strip().lower()
+        row.progress_json = _json(progress)
+        if message:
+            row.message = message
+        row.heartbeat_at = now
+        db.commit()
+        return True
+
+
+def cancel_job_before_phases(
+    job_id: str,
+    *,
+    message: str,
+    blocked_phases: set[str],
+) -> dict[str, Any]:
+    """Cancel a running job unless it has entered a non-interruptible phase."""
+    from app.infrastructure import db as dbinfra
+
+    dbinfra.init_db()
+    now = _now()
+    with dbinfra.SessionFactory() as db:
+        row = db.get(BackgroundJob, job_id)
+        if not row:
+            return {"cancelled": False, "reason": "Background job not found."}
+        if row.status != "running":
+            return {
+                "cancelled": False,
+                "reason": f"Job {job_id} is already {row.status}.",
+            }
+        phase = str(_loads(row.progress_json).get("phase") or "").strip().lower()
+        if phase in blocked_phases:
+            return {
+                "cancelled": False,
+                "reason": (
+                    f"Job {job_id} has entered its {phase} phase and can no longer "
+                    "be cancelled safely."
+                ),
+                "phase": phase,
+            }
+        row.status = "cancelled"
+        row.cancel_requested_at = now
+        row.finished_at = now
+        row.heartbeat_at = now
+        row.message = message
+        db.commit()
+        return {"cancelled": True, "phase": phase or None}
 
 
 def cancel_job(job_id: str, *, message: str) -> bool:
@@ -210,7 +313,9 @@ def recover_interrupted_jobs() -> int:
             row.finished_at = now
             row.heartbeat_at = now
             row.error = "Application restarted before this job completed."
-            row.message = "Interrupted by an application restart. Retry the search when ready."
+            row.message = (
+                "Interrupted by an application restart. Retry this background job when ready."
+            )
             row.retryable = True
         db.commit()
         return len(rows)

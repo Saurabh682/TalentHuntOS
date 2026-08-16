@@ -13,13 +13,13 @@ from app.actions.api import (
     ensure_core_actions_registered,
 )
 from app.actions.approvals import approve_pending_approval
-from app.actions.history import undo_action
 from app.actions.context import ActionContext
+from app.actions.history import undo_action
 from app.actions.locks import acquire_resource_locks, release_resource_locks
 from app.actions.models import ActionExecution, ActionHistory, ActionResourceLock
 from app.actions.registry import list_actions, register_action
 from app.candidates.discovery import record_discovery
-from app.candidates.models import Candidate, DiscoveryHuntMatch
+from app.candidates.models import Candidate, DiscoveredProfile, DiscoveryHuntMatch
 from app.candidates.service import create_candidate
 from app.hunts.models import HuntCandidate, HuntStage, TalentHunt
 from app.infrastructure.db import Base
@@ -65,6 +65,7 @@ def test_core_action_manifest_has_risk_scope_and_version():
         "discoveries.list",
         "discoveries.get",
         "discoveries.common_pool.list",
+        "discoveries.common_pool.archive",
         "discoveries.approve",
         "discoveries.reject",
         "pipeline.get",
@@ -159,15 +160,17 @@ def test_expired_resource_lock_is_recovered(monkeypatch, tmp_path):
     factory = _factory(tmp_path)
     _use_factory(monkeypatch, factory)
     with factory() as db:
-        db.add(ActionResourceLock(
-            lease_id="stale",
-            resource_key="hunt:3",
-            action_name="tests.crashed",
-            request_id="old-request",
-            status="active",
-            acquired_at=datetime.now(timezone.utc) - timedelta(hours=1),
-            expires_at=datetime.now(timezone.utc) - timedelta(minutes=30),
-        ))
+        db.add(
+            ActionResourceLock(
+                lease_id="stale",
+                resource_key="hunt:3",
+                action_name="tests.crashed",
+                request_id="old-request",
+                status="active",
+                acquired_at=datetime.now(timezone.utc) - timedelta(hours=1),
+                expires_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+            )
+        )
         db.commit()
 
     lease = acquire_resource_locks(
@@ -537,13 +540,110 @@ def test_discovery_reject_is_retained_audited_and_undoable(monkeypatch, tmp_path
         assert db.get(DiscoveryHuntMatch, match_id).status == "shortlisted"
 
 
+def test_common_pool_archive_requires_approval_preserves_candidates_and_undoes(
+    monkeypatch,
+    tmp_path,
+):
+    from app.candidates.discovery import (
+        common_pool_count,
+        list_common_pool_profiles,
+        sync_candidate_identities_to_common_pool,
+    )
+
+    factory = _factory(tmp_path)
+    _use_factory(monkeypatch, factory)
+    with factory() as db:
+        hunt = TalentHunt(title="Animator Hunt", target_role="Animator")
+        candidate = Candidate(
+            full_name="Canonical Candidate",
+            status="Active",
+            linkedin_url="https://linkedin.com/in/canonical-candidate",
+        )
+        db.add_all([hunt, candidate])
+        db.commit()
+        linked_profile, linked_match = record_discovery(
+            db,
+            hunt_id=hunt.id,
+            url=candidate.linkedin_url,
+            platform="linkedin",
+            source_query="animator",
+            full_name=candidate.full_name,
+            status="imported",
+        )
+        linked_profile.candidate_id = candidate.id
+        linked_profile.status = "imported"
+        linked_match.status = "imported"
+        record_discovery(
+            db,
+            hunt_id=hunt.id,
+            url="https://linkedin.com/in/raw-discovery",
+            platform="linkedin",
+            source_query="animator",
+            full_name="Raw Discovery",
+            status="shortlisted",
+        )
+        db.commit()
+        candidate_id = candidate.id
+
+    blocked = dispatch_action(
+        "discoveries.common_pool.archive",
+        {},
+        actor_type="agent",
+        user_id=17,
+        session_id="pool_archive",
+    )
+    assert blocked.success is False
+    assert "trusted approval" in blocked.error
+
+    preview = dispatch_preview(
+        "discoveries.common_pool.archive",
+        {},
+        actor_type="agent",
+        user_id=17,
+        session_id="pool_archive",
+    )
+    assert preview.success is True
+    assert preview.data["preview"]["profile_count"] == 2
+    assert preview.data["preview"]["linked_candidates_preserved"] == 1
+
+    result = approve_and_dispatch(
+        preview.data["approval_id"],
+        user_id=17,
+        session_id="pool_archive",
+    )
+    assert result.success is True
+    assert result.data["archived"] == 2
+    assert result.data["linked_candidates_preserved"] == 1
+
+    with factory() as db:
+        assert common_pool_count(db) == 0
+        assert list_common_pool_profiles(db) == []
+        assert db.get(Candidate, candidate_id).status == "Active"
+        assert {row.status for row in db.query(DiscoveredProfile).all()} == {"archived"}
+        assert {row.status for row in db.query(DiscoveryHuntMatch).all()} == {"archived"}
+        sync_candidate_identities_to_common_pool(db)
+        assert common_pool_count(db) == 0
+
+        action = db.scalar(
+            select(ActionHistory).where(ActionHistory.action_type == "archive_common_pool")
+        )
+        assert action is not None
+        undo_action(db, action.id)
+        assert common_pool_count(db) == 2
+        assert {row.status for row in db.query(DiscoveredProfile).all()} == {
+            "imported",
+            "raw",
+        }
+        assert db.get(Candidate, candidate_id).status == "Active"
+
+
 def test_discovery_approve_starts_background_scan(monkeypatch, tmp_path):
     factory = _factory(tmp_path)
     _use_factory(monkeypatch, factory)
     called = threading.Event()
     received = {}
 
-    def fake_import(match_id, *, actor_type):
+    def fake_import(match_id, *, actor_type, cancel_check=None, before_apply=None):
         received.update({"match_id": match_id, "actor_type": actor_type})
         called.set()
         return {"status": "success"}
@@ -633,7 +733,9 @@ def test_target_ui_commands_and_copilot_use_action_dispatcher():
     assert '"candidates.notes.add"' in candidate_page
     assert '"candidates.experiences.save"' in candidate_page
     assert '"candidates.educations.save"' in candidate_page
-    profile_review = (root / "app/ui/components/profile_review_dialog.py").read_text(encoding="utf-8")
+    profile_review = (root / "app/ui/components/profile_review_dialog.py").read_text(
+        encoding="utf-8"
+    )
     assert '"candidates.profile.apply"' in profile_review
     candidate_list_page = (root / "app/ui/pages/candidates.py").read_text(encoding="utf-8")
     assert '"candidates.archive"' in candidate_list_page
@@ -654,7 +756,9 @@ def test_target_ui_commands_and_copilot_use_action_dispatcher():
     assert '"hunts.archive"' in management_tools
     assert "from app.hunts.service import delete_hunt" not in hunts_page
     assert "from app.hunts.service import delete_hunt" not in management_tools
-    assert "'actions.undo'" in copilot_panel
+    assert "actions.undo" in copilot_panel
+    assert "jobs.cancel" in copilot_panel
+    assert "sourcing_jobs.cancel_all" not in copilot_panel
     assert '"actions.undo"' in copilot_tools
     assert "undo_action(undo_db" not in copilot_panel
     assert "_refresh_completed_action_cards" in copilot_panel

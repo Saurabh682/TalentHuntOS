@@ -3,6 +3,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -14,6 +15,7 @@ from app.hunts.models import TalentHunt
 from app.infrastructure.db import Base
 from app.jobs.models import BackgroundJob
 from app.jobs.runner import recover_interrupted_workflows
+from app.jobs.service import get_retryable_job, list_retryable_jobs
 
 
 def _factory(tmp_path):
@@ -45,7 +47,7 @@ def test_approval_launches_durable_enrichment_job(monkeypatch, tmp_path):
     started = threading.Event()
     release = threading.Event()
 
-    def fake_import(match_id, *, actor_type):
+    def fake_import(match_id, *, actor_type, cancel_check=None, before_apply=None):
         started.set()
         release.wait(1)
         return {"status": "success", "match_id": match_id, "actor_type": actor_type}
@@ -93,7 +95,7 @@ def test_registered_retry_creates_linked_enrichment_attempt(monkeypatch, tmp_pat
     _use_factory(monkeypatch, factory)
     completed = threading.Event()
 
-    def fake_import(match_id, *, actor_type):
+    def fake_import(match_id, *, actor_type, cancel_check=None, before_apply=None):
         completed.set()
         return {"status": "success", "match_id": match_id}
 
@@ -150,6 +152,89 @@ def test_registered_retry_creates_linked_enrichment_attempt(monkeypatch, tmp_pat
         assert retry.parent_job_id == "failedjob1"
         assert retry.attempt == 2
         assert json.loads(retry.payload_json)["match_id"] == match_id
+
+
+def test_only_latest_leaf_attempt_remains_retryable(monkeypatch, tmp_path):
+    factory = _factory(tmp_path)
+    _use_factory(monkeypatch, factory)
+    now = datetime.now(timezone.utc)
+    with factory() as db:
+        db.add_all(
+            [
+                BackgroundJob(
+                    id="install-parent",
+                    kind="embedded_ai_install",
+                    status="error",
+                    label="Install Embedded Local Copilot",
+                    message="First attempt failed.",
+                    error="old failure",
+                    attempt=1,
+                    retryable=True,
+                    started_at=now,
+                    heartbeat_at=now,
+                    finished_at=now,
+                ),
+                BackgroundJob(
+                    id="install-child",
+                    kind="embedded_ai_install",
+                    status="error",
+                    label="Install Embedded Local Copilot",
+                    message="Second attempt failed.",
+                    error="latest failure",
+                    attempt=2,
+                    parent_job_id="install-parent",
+                    retryable=True,
+                    started_at=now,
+                    heartbeat_at=now,
+                    finished_at=now,
+                ),
+            ]
+        )
+        db.commit()
+
+    assert [item["id"] for item in list_retryable_jobs()] == ["install-child"]
+    with pytest.raises(ValueError, match="newer retry attempt"):
+        get_retryable_job("install-parent")
+
+
+def test_successful_child_resolves_failed_parent_retry_card(monkeypatch, tmp_path):
+    factory = _factory(tmp_path)
+    _use_factory(monkeypatch, factory)
+    now = datetime.now(timezone.utc)
+    with factory() as db:
+        db.add_all(
+            [
+                BackgroundJob(
+                    id="failed-install",
+                    kind="embedded_ai_install",
+                    status="error",
+                    label="Install Embedded Local Copilot",
+                    message="Failed.",
+                    error="temporary failure",
+                    attempt=1,
+                    retryable=True,
+                    started_at=now,
+                    heartbeat_at=now,
+                    finished_at=now,
+                ),
+                BackgroundJob(
+                    id="ready-install",
+                    kind="embedded_ai_install",
+                    status="done",
+                    label="Install Embedded Local Copilot",
+                    message="Ready.",
+                    attempt=2,
+                    parent_job_id="failed-install",
+                    retryable=True,
+                    started_at=now,
+                    heartbeat_at=now,
+                    finished_at=now,
+                ),
+            ]
+        )
+        db.commit()
+
+    assert list_retryable_jobs() == []
 
 
 def test_restart_reconciles_interrupted_enrichment_domain_state(monkeypatch, tmp_path):

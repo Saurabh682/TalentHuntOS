@@ -9,19 +9,19 @@ with a vector search index for candidate matching.
 import json
 import logging
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy.orm import Session, selectinload
-from sqlalchemy import select, or_
+from sqlalchemy import or_, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, selectinload
 
 from app.candidates.models import (
     Candidate,
+    CandidateEducation,
+    CandidateExperience,
+    CandidateNote,
     CandidateProfile,
     CandidateTag,
-    CandidateExperience,
-    CandidateEducation,
-    CandidateNote,
 )
 
 logger = logging.getLogger("talenthunt.candidates.service")
@@ -310,16 +310,22 @@ def list_candidates(
             stmt = stmt.where(Candidate.status != "Archived")
 
         if search:
-            search_term = f"%{search.strip().lower()}%"
-            stmt = stmt.where(
-                or_(
-                    Candidate.full_name.ilike(search_term),
-                    Candidate.current_title.ilike(search_term),
-                    Candidate.current_company.ilike(search_term),
-                    Candidate.location.ilike(search_term),
-                    Candidate.email.ilike(search_term),
+            from app.candidates.fts import candidate_search_clause
+
+            fts_clause = candidate_search_clause(db, search)
+            if fts_clause is not None:
+                stmt = stmt.where(fts_clause)
+            else:
+                search_term = f"%{search.strip().lower()}%"
+                stmt = stmt.where(
+                    or_(
+                        Candidate.full_name.ilike(search_term),
+                        Candidate.current_title.ilike(search_term),
+                        Candidate.current_company.ilike(search_term),
+                        Candidate.location.ilike(search_term),
+                        Candidate.email.ilike(search_term),
+                    )
                 )
-            )
 
         stmt = stmt.order_by(Candidate.created_at.desc()).offset(skip).limit(limit)
         return list(db.scalars(stmt).all())
@@ -421,9 +427,10 @@ def delete_candidate(db: Session, candidate_id: int) -> bool:
         return False
 
     try:
-        from sqlalchemy import update, delete, select
-        from app.hunts.models import HuntCandidate, HuntActivity
+        from sqlalchemy import delete, select, update
+
         from app.communications.models import Communication, CommunicationThread, OutreachEnrollment
+        from app.hunts.models import HuntActivity, HuntCandidate
 
         # Clean up pipeline records (HuntCandidate and their activities)
         hunt_cands = db.execute(select(HuntCandidate.id).where(HuntCandidate.candidate_id == candidate_id)).scalars().all()

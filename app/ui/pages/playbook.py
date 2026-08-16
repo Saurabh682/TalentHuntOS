@@ -1,10 +1,12 @@
 """Global Sourcing Playbook — shared Keep/Pass learnings and insights."""
 
+from types import SimpleNamespace
+
 from nicegui import ui
 
+from app.actions.api import dispatch_action
 from app.ui.layout import create_layout
-from app.infrastructure.db import SessionFactory, init_db
-from app.hunts.playbook import list_playbook_entries, add_insight
+from app.infrastructure.db import init_db
 
 
 def _author() -> str:
@@ -26,15 +28,22 @@ def render_playbook():
             return
         list_box.clear()
         with list_box:
-            with SessionFactory() as db:
-                entries = list_playbook_entries(
-                    db,
-                    entry_type=filters["type"],
-                    role=filters["role"] or None,
-                    platform=filters["platform"],
-                    search=filters["search"] or None,
-                    limit=150,
-                )
+            result = dispatch_action(
+                "playbook.list",
+                {
+                    "entry_type": filters["type"],
+                    "role": filters["role"] or None,
+                    "platform": filters["platform"],
+                    "search": filters["search"] or None,
+                    "limit": 150,
+                },
+                actor_type="ui",
+                session_id="playbook",
+            )
+            if not result.success:
+                ui.notify(result.error or 'Could not load Playbook.', type='negative')
+                return
+            entries = [SimpleNamespace(**row) for row in (result.data or {}).get("entries", [])]
             if not entries:
                 with ui.card().classes('w-full p-10 th-card items-center text-center gap-2'):
                     ui.icon('menu_book', size='40px', color='slate-500')
@@ -68,16 +77,22 @@ def render_playbook():
                     if not note:
                         ui.notify('Note is required for an insight.', type='negative')
                         return
-                    with SessionFactory() as db:
-                        add_insight(
-                            db,
-                            worked=(outcome.value == 'worked'),
-                            note=note,
-                            role_context=(role_f.value or "").strip() or None,
-                            platform=(plat_f.value or "").strip() or None,
-                            query_text=(query_f.value or "").strip() or None,
-                            author_name=_author(),
-                        )
+                    result = dispatch_action(
+                        "playbook.insights.add",
+                        {
+                            "worked": outcome.value == 'worked',
+                            "note": note,
+                            "role_context": (role_f.value or "").strip() or None,
+                            "platform": (plat_f.value or "").strip() or None,
+                            "query_text": (query_f.value or "").strip() or None,
+                            "author_name": _author(),
+                        },
+                        actor_type="ui",
+                        session_id="playbook",
+                    )
+                    if not result.success:
+                        ui.notify(result.error or 'Could not add insight.', type='negative')
+                        return
                     ui.notify('Insight added to shared playbook.', type='positive')
                     dialog.close()
                     refresh()
@@ -157,7 +172,7 @@ def _render_entry_card(e):
                     ui.label(e.role_context).classes('text-sm font-semibold text-slate-100')
                 if e.platform:
                     ui.badge(e.platform, color='slate-800').classes('text-[10px] text-teal-300')
-            when = e.created_at.strftime("%Y-%m-%d %H:%M") if e.created_at else ""
+            when = str(e.created_at or "").replace("T", " ")[:16]
             ui.label(f"{e.author_name} · {when}").classes('text-[10px] text-slate-500')
 
         if e.candidate_name:

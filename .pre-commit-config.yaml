@@ -1,0 +1,17 @@
+minimum_pre_commit_version: "4.0.0"
+default_install_hook_types: [pre-commit]
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff correctness checks
+        entry: uv run ruff check --select E9,F63,F7,F82
+        language: system
+        types: [python]
+      - id: technology-catalog
+        name: Technology catalog validation
+        entry: uv run python ../scripts/validate_technology_catalog.py --check-markdown
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|README\.md|DESIGN\.md|docs/.*|\.pre-commit-config\.yaml)$

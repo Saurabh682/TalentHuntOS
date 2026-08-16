@@ -1,26 +1,16 @@
 """Outreach Sequence & Automated Drip Campaign Execution Engine."""
 
-import json
-import logging
-import threading
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import List, Optional
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.communications.models import (
+    OutreachEnrollment,
     OutreachSequence,
     OutreachStep,
-    OutreachEnrollment,
-    MessageTemplate,
 )
-from app.candidates.models import Candidate
-from app.communications.service import log_communication
-from app.communications.email_service import send_email
-from app.communications.template_engine import generate_candidate_outreach, render_template
-
-logger = logging.getLogger("talenthunt.communications.outreach")
-_process_lock = threading.Lock()
 
 
 def create_sequence(
@@ -136,154 +126,15 @@ def resume_enrollment(db: Session, enrollment_id: int) -> Optional[OutreachEnrol
     return enr
 
 
-def _process_due_outreach_steps(db: Session) -> List[Dict[str, Any]]:
-    """Process all active candidate enrollments whose next step is due.
-    
-    Renders message templates, logs communication records, sends mock email,
-    and updates enrollment progress to the next step.
+def process_due_outreach_steps(db: Session) -> list[dict[str, object]]:
+    """Reject the legacy unapproved send path.
+
+    Call ``communications.deliveries.due.list`` and then request an individual
+    ``communications.delivery.send`` approval instead.
     """
-    now = datetime.now(timezone.utc)
-    stmt = (
-        select(OutreachEnrollment)
-        .where(
-            OutreachEnrollment.status == "active",
-            OutreachEnrollment.next_step_due_at <= now,
-        )
+    raise PermissionError(
+        "Direct drip processing is disabled. Use the R4 approved delivery action."
     )
-    due_enrollments = list(db.scalars(stmt).all())
-    processed_results = []
-
-    for enr in due_enrollments:
-        candidate = db.get(Candidate, enr.candidate_id)
-        if not candidate:
-            enr.status = "error"
-            db.commit()
-            continue
-
-        # Find current step
-        step_stmt = select(OutreachStep).where(
-            OutreachStep.sequence_id == enr.sequence_id,
-            OutreachStep.step_number == enr.current_step_number,
-        )
-        step = db.scalar(step_stmt)
-
-        if not step:
-            # Sequence finished
-            enr.status = "completed"
-            db.commit()
-            processed_results.append({
-                "enrollment_id": enr.id,
-                "candidate_id": candidate.id,
-                "candidate_name": getattr(candidate, "full_name", "Unknown"),
-                "status": "completed",
-                "message": "All steps executed successfully.",
-            })
-            continue
-
-        # Resolve subject and body
-        subject = step.subject or f"Outreach Step {step.step_number}"
-        body_template = step.body_override
-
-        if not body_template and step.template_id:
-            tmpl = db.get(MessageTemplate, step.template_id)
-            if tmpl:
-                body_template = tmpl.body_template
-                if tmpl.subject and not step.subject:
-                    subject = tmpl.subject
-
-        if not body_template:
-            body_template = "Hi {{candidate_name}}, following up regarding opportunities at {{company}}."
-
-        # Personalize text
-        cand_name = getattr(candidate, "full_name", "Candidate") or "Candidate"
-        skills_str = ""
-        if candidate and hasattr(candidate, "profile") and candidate.profile and candidate.profile.skills_json:
-            try:
-                sk_arr = json.loads(candidate.profile.skills_json)
-                skills_str = ", ".join(str(s) for s in sk_arr if s)
-            except Exception:
-                skills_str = ""
-
-        subj_context = {
-            "candidate_name": cand_name,
-            "first_name": cand_name.split()[0] if cand_name else "there",
-            "company": "Innovate Tech",
-            "job_title": getattr(candidate, "current_title", "Senior Role") or "Senior Role",
-            "skills": skills_str or "your technical domain",
-            "recruiter_name": "Talent Hunt Recruiter",
-        }
-
-        rendered_body = generate_candidate_outreach(
-            template_body=body_template,
-            candidate=candidate,
-            recruiter_name="Talent Hunt Recruiter",
-        )
-        rendered_subject = render_template(subject, subj_context)
-
-        # Send / Log communication
-        recipient_addr = candidate.email or f"candidate_{candidate.id}@talenthunt-demo.com"
-        
-        send_res = send_email(
-            to_email=recipient_addr,
-            subject=rendered_subject,
-            body=rendered_body,
-        )
-
-        comm_record = None
-        try:
-            comm_record = log_communication(
-                db,
-                candidate_id=candidate.id,
-                channel=step.channel,
-                direction="outbound",
-                sender="recruiter@talenthunt.os",
-                recipient=recipient_addr,
-                subject=rendered_subject,
-                body=rendered_body,
-                status="sent" if send_res["success"] else "failed",
-            )
-        except Exception as log_err:
-            logger.warning(f"Failed to log communication record: {log_err}")
-
-        # Calculate next step
-        enr.last_step_sent_at = datetime.now(timezone.utc)
-        if send_res["success"]:
-            next_step_num = enr.current_step_number + 1
-            next_step_stmt = select(OutreachStep).where(
-                OutreachStep.sequence_id == enr.sequence_id,
-                OutreachStep.step_number == next_step_num,
-            )
-            next_step = db.scalar(next_step_stmt)
-
-            if next_step:
-                enr.current_step_number = next_step_num
-                enr.next_step_due_at = datetime.now(timezone.utc) + timedelta(days=next_step.delay_days)
-            else:
-                enr.status = "completed"
-                enr.next_step_due_at = None
-        else:
-            enr.status = "paused"
-
-        db.commit()
-
-        processed_results.append({
-            "enrollment_id": enr.id,
-            "candidate_id": candidate.id,
-            "candidate_name": getattr(candidate, "full_name", "Unknown"),
-            "step_number": step.step_number,
-            "channel": step.channel,
-            "communication_id": comm_record.id if comm_record else None,
-            "subject": rendered_subject,
-            "status": "sent" if send_res["success"] else "failed",
-        })
-
-    return processed_results
-
-
-def process_due_outreach_steps(db: Session) -> List[Dict[str, Any]]:
-    """Serialize drip processing so a due enrollment cannot be sent twice."""
-    with _process_lock:
-        return _process_due_outreach_steps(db)
 
 
 def seed_default_sequence_if_empty(db: Session) -> None:

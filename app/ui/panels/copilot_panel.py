@@ -5,9 +5,10 @@ import json
 import logging
 
 from nicegui import ui
+
+from app.config.settings import DATA_DIR
 from app.copilot.conversation import conversation_manager
 from app.copilot.streaming import stream_copilot_response
-from app.config.settings import DATA_DIR
 
 logger = logging.getLogger("talenthunt.ui.copilot_panel")
 
@@ -436,13 +437,16 @@ def render_copilot_panel():
     try:
         from app.config.settings import settings as _tts_settings
         from app.voice.preferences import load_tts_preferences
+
         load_tts_preferences()
         _v = (
             _tts_settings.tts_kokoro_voice
             if _tts_settings.tts_provider == "kokoro"
             else _tts_settings.tts_edge_voice
         ).replace("'", "")
-        ui.run_javascript(f"window.thFreeVoice = window.thFreeVoice || {{}}; window.thFreeVoice.edgeVoice = '{_v}';")
+        ui.run_javascript(
+            f"window.thFreeVoice = window.thFreeVoice || {{}}; window.thFreeVoice.edgeVoice = '{_v}';"
+        )
     except Exception:
         pass
 
@@ -454,7 +458,7 @@ def render_copilot_panel():
     input_field_ref = {"el": None}
     session_select_ref = {"el": None}
     busy_state = {"chat": False, "label": ""}
-    busy_banner_ref = {"el": None, "label": None, "detail": None}
+    busy_banner_ref = {"el": None, "label": None, "detail": None, "job_id": None}
     approval_container_ref = {"el": None}
     approval_watch = {"ids": ()}
     completed_container_ref = {"el": None}
@@ -473,8 +477,9 @@ def render_copilot_panel():
     def get_hunt_options():
         options = {"default": "General Chat"}
         try:
-            from app.infrastructure.db import SessionFactory
             from app.hunts.service import list_hunts
+            from app.infrastructure.db import SessionFactory
+
             with SessionFactory() as db:
                 # Include Active + recent hunts so switching pages doesn't drop the selection
                 hunts = list_hunts(db, limit=100)
@@ -495,7 +500,7 @@ def render_copilot_panel():
         try:
             ui.run_javascript(
                 'setTimeout(() => { const el = document.querySelector(".copilot-chat-container");'
-                ' if(el) el.scrollTop = el.scrollHeight; }, 50);'
+                " if(el) el.scrollTop = el.scrollHeight; }, 50);"
             )
         except Exception:
             pass
@@ -503,13 +508,13 @@ def render_copilot_panel():
     def begin_tts_response():
         if not tts_active["enabled"]:
             return
-        ui.run_javascript('beginCopilotSpeechResponse();')
+        ui.run_javascript("beginCopilotSpeechResponse();")
 
     def queue_tts_response(text: str, *, final: bool = False):
         if not tts_active["enabled"] or not text or text.startswith("Error"):
             return
         ui.run_javascript(
-            f'queueCopilotSpeechText({json.dumps(text[:1800])}, {str(final).lower()});'
+            f"queueCopilotSpeechText({json.dumps(text[:1800])}, {str(final).lower()});"
         )
 
     def render_history():
@@ -519,15 +524,21 @@ def render_copilot_panel():
         with chat_container_ref["el"]:
             messages = conversation_manager.get_messages(session_id=active_session_id["value"])
             if not messages:
-                with ui.chat_message(name='Copilot', stamp='now', avatar=BOT_AVATAR).classes('w-full'):
-                    ui.markdown('Hello! I am TalentHunt Copilot. How can I help you hunt top talent today?')
+                with ui.chat_message(name="Copilot", stamp="now", avatar=BOT_AVATAR).classes(
+                    "w-full"
+                ):
+                    ui.markdown(
+                        "Hello! I am TalentHunt Copilot. How can I help you hunt top talent today?"
+                    )
             else:
                 for msg in messages:
                     is_user = msg["role"] == "user"
                     name = "You" if is_user else "Copilot"
                     avatar = USER_AVATAR if is_user else BOT_AVATAR
                     stamp = msg.get("timestamp", "")
-                    with ui.chat_message(name=name, stamp=stamp, avatar=avatar, sent=is_user).classes('w-full'):
+                    with ui.chat_message(
+                        name=name, stamp=stamp, avatar=avatar, sent=is_user
+                    ).classes("w-full"):
                         ui.markdown(msg["content"])
         scroll_to_bottom()
 
@@ -562,65 +573,132 @@ def render_copilot_panel():
                 preview = item.get("preview") or {}
                 approval_id = int(item["approval_id"])
                 bound_session = item["session_id"]
+                risk_level = preview.get("risk_level") or (
+                    "R4" if preview.get("kind") == "communication_delivery" else "R3"
+                )
+                is_delivery = preview.get("kind") == "communication_delivery"
                 with ui.card().classes(
-                    'w-full p-3 gap-2 bg-[#241a17] border border-red-500/60 rounded-md'
+                    "w-full p-3 gap-2 bg-[#241a17] border border-red-500/60 rounded-md"
                 ):
-                    with ui.row().classes('w-full items-center justify-between gap-2'):
-                        with ui.row().classes('items-center gap-2 min-w-0 grow'):
-                            ui.icon('verified_user', size='xs', color='red-3')
-                            ui.label(preview.get('title') or 'Approval required').classes(
-                                'text-xs font-semibold text-red-100'
+                    with ui.row().classes("w-full items-center justify-between gap-2"):
+                        with ui.row().classes("items-center gap-2 min-w-0 grow"):
+                            ui.icon("verified_user", size="xs", color="red-3")
+                            ui.label(preview.get("title") or "Approval required").classes(
+                                "text-xs font-semibold text-red-100"
                             )
-                        ui.badge('R3', color='red').classes('text-[9px]')
-                    ui.label(preview.get('summary') or '').classes(
-                        'text-[11px] text-slate-300 leading-tight'
+                        ui.badge(risk_level, color="red").classes("text-[9px]")
+                    ui.label(preview.get("summary") or "").classes(
+                        "text-[11px] text-slate-300 leading-tight"
                     )
-                    if preview.get('pipeline_candidates') is not None:
+                    if preview.get("pipeline_candidates") is not None:
                         ui.label(
                             f"{preview['pipeline_candidates']} pipeline enrollment(s) affected - "
                             f"undo for {preview.get('undo_window_days', 7)} days"
-                        ).classes('text-[10px] text-slate-400')
+                        ).classes("text-[10px] text-slate-400")
+                    if preview.get("profile_count") is not None:
+                        ui.label(
+                            f"{preview['profile_count']} Discoveries profile(s) · "
+                            f"{preview.get('linked_candidates_preserved', 0)} canonical "
+                            f"Candidate(s) preserved · Undo {preview.get('undo_window_days', 7)} days"
+                        ).classes("text-[10px] text-slate-400")
+                    if is_delivery:
+                        with ui.element("div").classes(
+                            "w-full p-2.5 bg-[#091520] border border-[#2b4253] rounded-md"
+                        ):
+                            ui.label(f"From: {preview.get('sender') or 'Not configured'}").classes(
+                                "text-[10px] text-slate-400"
+                            )
+                            ui.label(
+                                f"To: {preview.get('recipient') or 'Missing recipient'}"
+                            ).classes("text-[11px] text-teal-300")
+                            if preview.get("cc"):
+                                ui.label(f"CC: {preview['cc']}").classes(
+                                    "text-[10px] text-slate-400"
+                                )
+                            ui.label(
+                                f"Subject: {preview.get('subject') or '(no subject)'}"
+                            ).classes("text-[11px] font-semibold text-slate-200 mt-1")
+                            with ui.scroll_area().classes("w-full max-h-44 mt-1"):
+                                ui.label(preview.get("body") or "").classes(
+                                    "text-[11px] text-slate-300 whitespace-pre-wrap pr-1"
+                                )
+                        ui.label("1 recipient · external send · no Undo").classes(
+                            "text-[10px] font-semibold text-amber-300"
+                        )
 
-                    def approve_card(aid=approval_id, sid=bound_session, p=preview):
+                    def approve_card(
+                        aid=approval_id,
+                        sid=bound_session,
+                        p=preview,
+                        action_name=item.get("action_name"),
+                    ):
                         from app.actions.api import approve_and_dispatch
 
-                        result = approve_and_dispatch(aid, session_id=sid, actor_type='ui')
+                        result = approve_and_dispatch(aid, session_id=sid, actor_type="ui")
                         if not result.success:
-                            ui.notify(result.error or 'Approval failed.', type='negative')
-                        else:
+                            ui.notify(result.error or "Approval failed.", type="negative")
+                        elif p.get("kind") == "communication_delivery":
+                            communication = (result.data or {}).get("communication") or {}
+                            message_id = communication.get("provider_message_id")
+                            recipient = communication.get("recipient") or p.get("recipient")
+                            receipt = f" Provider receipt: {message_id}." if message_id else ""
                             ui.notify(
-                                f"Archived {p.get('hunt_title') or 'Talent Hunt'}. Undo is available for seven days.",
-                                type='positive',
+                                f"Email sent to {recipient}.{receipt} External sends cannot be undone.",
+                                type="positive",
                             )
                             conversation_manager.add_assistant_message(
-                                f"Archived **{p.get('hunt_title') or 'Talent Hunt'}** after trusted UI approval. "
-                                "The action is undoable for seven days.",
+                                f"Sent the approved email to **{recipient}**.{receipt} "
+                                "This external delivery is recorded and cannot be undone.",
                                 session_id=sid,
                             )
                             if sid == active_session_id["value"]:
                                 render_history()
-                            ui.timer(0.7, lambda: ui.navigate.reload(), once=True)
+                        else:
+                            data = result.data or {}
+                            title = p.get("title") or action_name or "Approved action"
+                            undoable = bool(data.get("undoable", p.get("reversible", False)))
+                            suffix = " Undo is available for seven days." if undoable else ""
+                            ui.notify(f"{title} completed.{suffix}", type="positive")
+                            conversation_manager.add_assistant_message(
+                                f"Completed **{title}** after trusted UI approval.{suffix}",
+                                session_id=sid,
+                            )
+                            if sid == active_session_id["value"]:
+                                render_history()
                         approval_watch["ids"] = ()
-                        _refresh_approval_cards()
+                        completed_watch["state"] = ()
+                        container.clear()
+                        container.set_visibility(False)
+                        ui.timer(0.1, _refresh_approval_cards, once=True)
+                        _refresh_completed_action_cards()
 
                     def cancel_card(aid=approval_id, sid=bound_session):
                         from app.actions.api import cancel_approval
 
                         result = cancel_approval(aid, session_id=sid)
                         ui.notify(
-                            'Approval cancelled.' if result.success else (result.error or 'Cancel failed.'),
-                            type='info' if result.success else 'negative',
+                            "Approval cancelled."
+                            if result.success
+                            else (result.error or "Cancel failed."),
+                            type="info" if result.success else "negative",
                         )
                         approval_watch["ids"] = ()
-                        _refresh_approval_cards()
+                        if result.success:
+                            container.clear()
+                            container.set_visibility(False)
+                            ui.timer(0.1, _refresh_approval_cards, once=True)
+                        else:
+                            _refresh_approval_cards()
 
-                    with ui.row().classes('w-full justify-end gap-2'):
-                        ui.button('Cancel', on_click=cancel_card).props(
-                            'flat dense no-caps'
-                        ).classes('text-xs text-slate-400')
-                        ui.button('Approve', icon='check', on_click=approve_card).props(
-                            'dense no-caps'
-                        ).classes('text-xs bg-red-600 text-white')
+                    with ui.row().classes("w-full justify-end gap-2"):
+                        ui.button("Cancel", on_click=cancel_card).props(
+                            "flat dense no-caps"
+                        ).classes("text-xs text-slate-400")
+                        ui.button("Approve", icon="check", on_click=approve_card).props(
+                            "dense no-caps"
+                        ).classes("text-xs bg-red-600 text-white").set_text(
+                            "Approve & send" if is_delivery else "Approve"
+                        )
 
     def _refresh_completed_action_cards():
         container = completed_container_ref["el"]
@@ -655,60 +733,66 @@ def render_copilot_panel():
             return
 
         with container:
-            with ui.row().classes('w-full items-center justify-between px-1'):
-                ui.label('Recent action').classes('text-[10px] uppercase tracking-wide text-slate-500')
-                ui.label('Undo for 7 days').classes('text-[10px] text-slate-600')
+            with ui.row().classes("w-full items-center justify-between px-1"):
+                ui.label("Recent action").classes(
+                    "text-[10px] uppercase tracking-wide text-slate-500"
+                )
+                ui.label("Undo for 7 days").classes("text-[10px] text-slate-600")
             for action in actions:
                 target = action.get("target") or {}
                 is_undone = action["status"] == "undone"
-                with ui.element('div').classes(
-                    'w-full p-2.5 bg-[#0e1b28] border border-[#1b3040] rounded-md'
+                with ui.element("div").classes(
+                    "w-full p-2.5 bg-[#0e1b28] border border-[#1b3040] rounded-md"
                 ):
-                    with ui.row().classes('w-full items-center gap-2 no-wrap'):
+                    with ui.row().classes("w-full items-center gap-2 no-wrap"):
                         ui.icon(
-                            'undo' if is_undone else 'check_circle',
-                            size='xs',
-                            color='blue-grey-5' if is_undone else 'teal-4',
+                            "undo" if is_undone else "check_circle",
+                            size="xs",
+                            color="blue-grey-5" if is_undone else "teal-4",
                         )
-                        with ui.column().classes('gap-0 grow min-w-0'):
-                            ui.label(action['summary']).classes(
-                                'text-[11px] font-medium text-slate-200 leading-tight'
+                        with ui.column().classes("gap-0 grow min-w-0"):
+                            ui.label(action["summary"]).classes(
+                                "text-[11px] font-medium text-slate-200 leading-tight"
                             )
-                            stamp = action['created_at'].replace('T', ' ')[:16]
-                            status_label = 'Undone' if is_undone else 'Completed'
+                            stamp = action["created_at"].replace("T", " ")[:16]
+                            status_label = "Undone" if is_undone else "Completed"
                             ui.label(f"#{action['id']} · {status_label} · {stamp}").classes(
-                                'text-[9px] text-slate-500'
+                                "text-[9px] text-slate-500"
                             )
 
-                        if target.get('url'):
-                            def open_target(url=target['url']):
+                        if target.get("url"):
+
+                            def open_target(url=target["url"]):
                                 ui.navigate.to(url)
 
-                            ui.button(icon='open_in_new', on_click=open_target).props(
-                                'flat round dense'
-                            ).classes('text-sky-400').tooltip(target.get('label') or 'Open affected record')
+                            ui.button(icon="open_in_new", on_click=open_target).props(
+                                "flat round dense"
+                            ).classes("text-sky-400").tooltip(
+                                target.get("label") or "Open affected record"
+                            )
 
-                        if action['undoable']:
-                            def undo_card(aid=action['id']):
+                        if action["undoable"]:
+
+                            def undo_card(aid=action["id"]):
                                 from app.actions.api import dispatch_action
 
                                 result = dispatch_action(
-                                    'actions.undo',
-                                    {'action_id': aid},
-                                    actor_type='ui',
+                                    "actions.undo",
+                                    {"action_id": aid},
+                                    actor_type="ui",
                                     session_id=active_session_id["value"],
                                 )
                                 if result.success:
-                                    ui.notify(result.data['message'], type='positive')
+                                    ui.notify(result.data["message"], type="positive")
                                     completed_watch["state"] = ()
                                     _refresh_completed_action_cards()
                                     ui.timer(0.6, lambda: ui.navigate.reload(), once=True)
                                 else:
-                                    ui.notify(result.error or 'Undo failed.', type='negative')
+                                    ui.notify(result.error or "Undo failed.", type="negative")
 
-                            ui.button(icon='undo', on_click=undo_card).props(
-                                'flat round dense'
-                            ).classes('text-[#19d3c5]').tooltip('Undo this action')
+                            ui.button(icon="undo", on_click=undo_card).props(
+                                "flat round dense"
+                            ).classes("text-[#19d3c5]").tooltip("Undo this action")
 
     def _refresh_retry_jobs():
         container = retry_container_ref["el"]
@@ -730,38 +814,40 @@ def render_copilot_panel():
             return
         job = retryable[0]
         with container:
-            with ui.element('div').classes(
-                'w-full px-2.5 py-2 bg-[#171c24] border border-amber-700/50 rounded-md'
+            with ui.element("div").classes(
+                "w-full px-2.5 py-2 bg-[#171c24] border border-amber-700/50 rounded-md"
             ):
-                with ui.row().classes('w-full items-center gap-2 no-wrap'):
-                    ui.icon('error_outline', size='xs').classes('text-amber-400')
-                    with ui.column().classes('gap-0 grow min-w-0'):
-                        ui.label(job.get('label') or 'Background job').classes(
-                            'text-[11px] font-medium text-slate-200'
+                with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                    ui.icon("error_outline", size="xs").classes("text-amber-400")
+                    with ui.column().classes("gap-0 grow min-w-0"):
+                        ui.label(job.get("label") or "Background job").classes(
+                            "text-[11px] font-medium text-slate-200"
                         )
                         ui.label(
                             f"{job['status'].title()} - attempt {job.get('attempt') or 1}"
-                        ).classes('text-[9px] text-slate-500')
+                        ).classes("text-[9px] text-slate-500")
 
-                    def retry_failed_job(jid=job['id']):
+                    def retry_failed_job(jid=job["id"]):
                         from app.actions.api import dispatch_action
 
                         result = dispatch_action(
-                            'jobs.retry',
-                            {'job_id': jid},
-                            actor_type='ui',
+                            "jobs.retry",
+                            {"job_id": jid},
+                            actor_type="ui",
                             session_id=active_session_id["value"],
                         )
                         ui.notify(
-                            'Retry started.' if result.success else (result.error or 'Retry failed.'),
-                            type='positive' if result.success else 'negative',
+                            "Retry started."
+                            if result.success
+                            else (result.error or "Retry failed."),
+                            type="positive" if result.success else "negative",
                         )
                         retry_watch["state"] = ()
                         _refresh_retry_jobs()
 
-                    ui.button(icon='refresh', on_click=retry_failed_job).props(
-                        'flat round dense'
-                    ).classes('text-amber-300').tooltip('Retry with the stored launch parameters')
+                    ui.button(icon="refresh", on_click=retry_failed_job).props(
+                        'flat round dense aria-label="Retry failed job"'
+                    ).classes("text-amber-300").tooltip("Retry with the stored launch parameters")
 
     async def handle_send(e=None):
         args = getattr(e, "args", None) if e is not None else None
@@ -772,29 +858,50 @@ def render_copilot_panel():
         if not input_el or not input_el.value.strip():
             return
 
-        from app.hunts import sourcing_jobs
         from app.copilot.direct_actions import (
             parse_clear_and_source,
+            parse_common_pool_archive,
             parse_global_candidate_delete,
             parse_pending_hunt_clear_confirmation,
             run_clear_and_source,
+            run_common_pool_archive_preview,
             run_confirmed_hunt_clear,
             run_global_candidate_delete,
         )
 
         user_text = input_el.value.strip()
-        global_delete = parse_global_candidate_delete(user_text)
+        common_pool_archive = parse_common_pool_archive(user_text)
+        global_delete = (
+            None if common_pool_archive is not None else parse_global_candidate_delete(user_text)
+        )
         pending_hunt_clear = parse_pending_hunt_clear_confirmation(
             user_text,
             conversation_manager.get_messages(session_id=active_session_id["value"]),
         )
-        direct = None if global_delete or pending_hunt_clear else parse_clear_and_source(user_text)
+        direct = (
+            None
+            if common_pool_archive is not None or global_delete or pending_hunt_clear
+            else parse_clear_and_source(user_text)
+        )
         low = user_text.lower()
         cancel_search = any(
             phrase in low
-            for phrase in ("cancel search", "cancel sourcing", "cancel crawl", "stop search", "stop sourcing", "stop crawl")
+            for phrase in (
+                "cancel search",
+                "cancel sourcing",
+                "cancel crawl",
+                "stop search",
+                "stop sourcing",
+                "stop crawl",
+            )
         )
-        force_new = bool(direct or global_delete or pending_hunt_clear or cancel_search)
+        force_new = bool(
+            direct
+            or common_pool_archive is not None
+            or global_delete
+            or pending_hunt_clear
+            or cancel_search
+        )
 
         if busy_state["chat"] and not force_new:
             ui.notify(
@@ -817,12 +924,16 @@ def render_copilot_panel():
         _refresh_busy_banner()
 
         with chat_el:
-            with ui.chat_message(name="You", stamp="now", avatar=USER_AVATAR, sent=True).classes('w-full'):
+            with ui.chat_message(name="You", stamp="now", avatar=USER_AVATAR, sent=True).classes(
+                "w-full"
+            ):
                 ui.markdown(user_text)
 
             scroll_to_bottom()
 
-            response_msg = ui.chat_message(name="Copilot", stamp="typing...", avatar=BOT_AVATAR).classes('w-full')
+            response_msg = ui.chat_message(
+                name="Copilot", stamp="typing...", avatar=BOT_AVATAR
+            ).classes("w-full")
             with response_msg:
                 response_label = ui.markdown("...")
         begin_tts_response()
@@ -831,16 +942,49 @@ def render_copilot_panel():
         try:
             # Deterministic path — don't rely on the LLM to call tools
             if cancel_search:
-                cancelled = sourcing_jobs.cancel_all()
-                final_resp = (
-                    f"Cancelled **{cancelled}** active talent search."
-                    if cancelled
-                    else "There is no active talent search to cancel."
+                from app.actions.api import dispatch_action
+
+                active = dispatch_action(
+                    "jobs.list",
+                    {"status": "active", "kind": "sourcing", "limit": 1},
+                    actor_type="agent",
+                    session_id=active_session_id["value"],
+                )
+                active_jobs = active.data.get("jobs", []) if active.success else []
+                if not active.success:
+                    final_resp = active.error or "Active searches could not be checked."
+                elif not active_jobs:
+                    final_resp = "There is no active talent search to cancel."
+                else:
+                    cancelled = dispatch_action(
+                        "jobs.cancel",
+                        {"job_id": active_jobs[0]["id"]},
+                        actor_type="agent",
+                        session_id=active_session_id["value"],
+                    )
+                    final_resp = (
+                        cancelled.data.get("message")
+                        if cancelled.success
+                        else cancelled.error or "The active search could not be cancelled."
+                    )
+                response_label.content = final_resp
+                from app.copilot.conversation import conversation_manager as _cm
+
+                _cm.add_user_message(user_text, active_session_id["value"])
+                _cm.add_assistant_message(final_resp, active_session_id["value"])
+                scroll_to_bottom()
+            elif common_pool_archive is not None:
+                final_resp = await asyncio.to_thread(
+                    run_common_pool_archive_preview,
+                    session_id=active_session_id["value"],
                 )
                 response_label.content = final_resp
                 from app.copilot.conversation import conversation_manager as _cm
+
                 _cm.add_user_message(user_text, active_session_id["value"])
                 _cm.add_assistant_message(final_resp, active_session_id["value"])
+                approval_watch["ids"] = ()
+                _refresh_approval_cards()
                 scroll_to_bottom()
             elif global_delete:
                 final_resp = await asyncio.to_thread(
@@ -852,6 +996,7 @@ def render_copilot_panel():
                 final_resp = final_resp.replace("<!-- ui-refresh:candidates -->", "").strip()
                 response_label.content = final_resp
                 from app.copilot.conversation import conversation_manager as _cm
+
                 _cm.add_user_message(user_text, active_session_id["value"])
                 _cm.add_assistant_message(final_resp, active_session_id["value"])
                 scroll_to_bottom()
@@ -865,6 +1010,7 @@ def render_copilot_panel():
                 )
                 response_label.content = final_resp
                 from app.copilot.conversation import conversation_manager as _cm
+
                 _cm.add_user_message(user_text, active_session_id["value"])
                 _cm.add_assistant_message(final_resp, active_session_id["value"])
                 scroll_to_bottom()
@@ -878,6 +1024,7 @@ def render_copilot_panel():
                 )
                 response_label.content = final_resp
                 from app.copilot.conversation import conversation_manager as _cm
+
                 _cm.add_user_message(user_text, active_session_id["value"])
                 _cm.add_assistant_message(final_resp, active_session_id["value"])
                 scroll_to_bottom()
@@ -919,7 +1066,7 @@ def render_copilot_panel():
             # Stop the cursor from jumping to start of the Quasar input
             ui.run_javascript(
                 'const el=document.querySelector(".th-copilot-input textarea, .th-copilot-input input");'
-                'if(el){el.blur(); el.focus();}'
+                "if(el){el.blur(); el.focus();}"
             )
         except Exception:
             pass
@@ -963,91 +1110,339 @@ def render_copilot_panel():
             handle_down(e)
 
     def open_action_history():
-        from app.actions.history import list_recent_actions, serialize_action
         from app.actions.api import dispatch_action
+        from app.actions.history import list_recent_actions, serialize_action
         from app.infrastructure.db import SessionFactory
 
         with SessionFactory() as db:
             actions = [serialize_action(item, db) for item in list_recent_actions(db, days=7)]
 
-        with ui.dialog() as action_dialog, ui.card().classes(
-            'w-full max-w-lg p-4 th-card border border-teal-500/30 gap-3'
+        with (
+            ui.dialog() as action_dialog,
+            ui.card().classes("w-full max-w-lg p-4 th-card border border-teal-500/30 gap-3"),
         ):
-            with ui.row().classes('w-full items-center justify-between'):
-                ui.label('Action history').classes('text-base font-bold text-slate-100')
-                ui.button(icon='close', on_click=action_dialog.close).props('flat round dense').classes('text-slate-400')
-            ui.label('Last 7 days').classes('text-[11px] text-slate-500')
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("Action history").classes("text-base font-bold text-slate-100")
+                ui.button(icon="close", on_click=action_dialog.close).props(
+                    "flat round dense"
+                ).classes("text-slate-400")
+            ui.label("Last 7 days").classes("text-[11px] text-slate-500")
             if not actions:
-                ui.label('No recorded actions yet.').classes('text-sm text-slate-400 py-4')
-            with ui.column().classes('w-full gap-2 max-h-96 overflow-y-auto'):
+                ui.label("No recorded actions yet.").classes("text-sm text-slate-400 py-4")
+            with ui.column().classes("w-full gap-2 max-h-96 overflow-y-auto"):
                 for action in actions:
-                    with ui.row().classes('w-full items-center gap-2').style(
-                        'padding:9px;border:1px solid #1b3040;border-radius:7px;background:#0e1b28'
+                    with (
+                        ui.row()
+                        .classes("w-full items-center gap-2")
+                        .style(
+                            "padding:9px;border:1px solid #1b3040;border-radius:7px;background:#0e1b28"
+                        )
                     ):
-                        with ui.column().classes('gap-0 grow min-w-0'):
-                            ui.label(action['summary']).classes('text-xs text-slate-200')
-                            stamp = action['created_at'].replace('T', ' ')[:16]
-                            ui.label(f"#{action['id']} · {stamp} · {action['status']}").classes('text-[10px] text-slate-500')
-                        if action['undoable']:
-                            def _undo(aid=action['id']):
+                        with ui.column().classes("gap-0 grow min-w-0"):
+                            ui.label(action["summary"]).classes("text-xs text-slate-200")
+                            stamp = action["created_at"].replace("T", " ")[:16]
+                            ui.label(f"#{action['id']} · {stamp} · {action['status']}").classes(
+                                "text-[10px] text-slate-500"
+                            )
+                        if action["undoable"]:
+
+                            def _undo(aid=action["id"]):
                                 result = dispatch_action(
-                                    'actions.undo',
-                                    {'action_id': aid},
-                                    actor_type='ui',
+                                    "actions.undo",
+                                    {"action_id": aid},
+                                    actor_type="ui",
                                     session_id=active_session_id["value"],
                                 )
                                 if result.success:
-                                    ui.notify(result.data['message'], type='positive')
+                                    ui.notify(result.data["message"], type="positive")
                                     action_dialog.close()
                                     completed_watch["state"] = ()
                                     _refresh_completed_action_cards()
                                     ui.timer(0.6, lambda: ui.navigate.reload(), once=True)
                                 else:
-                                    ui.notify(result.error or 'Undo failed.', type='negative')
+                                    ui.notify(result.error or "Undo failed.", type="negative")
 
-                            ui.button(icon='undo', on_click=_undo).props('flat round dense').classes(
-                                'text-[#19d3c5]'
-                            ).tooltip('Undo this action')
+                            ui.button(icon="undo", on_click=_undo).props(
+                                "flat round dense"
+                            ).classes("text-[#19d3c5]").tooltip("Undo this action")
         action_dialog.open()
 
-    with ui.element('div').classes('th-copilot-inner'):
-        with ui.element('div').style(
-            'display:flex;align-items:center;justify-content:space-between;'
-            'width:100%;margin-bottom:12px;flex-shrink:0;height:auto'
+    def open_background_jobs():
+        from app.actions.api import dispatch_action
+
+        with (
+            ui.dialog() as jobs_dialog,
+            ui.card().classes("w-full max-w-4xl max-h-[86vh] p-5 th-card gap-3"),
         ):
-            ui.label('Copilot').style('font-weight:700;color:#edf5f7;font-size:13px;white-space:nowrap')
-            with ui.element('div').style('display:flex;align-items:center;gap:2px;flex-shrink:0'):
+            with ui.row().classes("w-full items-center justify-between gap-3"):
+                with ui.column().classes("gap-0"):
+                    ui.label("Background Jobs").classes("th-title")
+                    ui.label(
+                        "Durable work history. Cancel and Retry always target one exact job ID."
+                    ).classes("th-muted")
+                with ui.row().classes("items-center gap-1"):
+                    refresh_jobs_button = (
+                        ui.button(icon="refresh")
+                        .props('flat round dense aria-label="Refresh jobs"')
+                        .tooltip("Refresh jobs")
+                    )
+                    ui.button(icon="close", on_click=jobs_dialog.close).props("flat round dense")
+
+            status_filter = (
+                ui.select(
+                    {
+                        "all": "All jobs",
+                        "active": "Active",
+                        "retryable": "Retryable",
+                        "done": "Completed",
+                        "cancelled": "Cancelled",
+                        "error": "Failed",
+                        "interrupted": "Interrupted",
+                    },
+                    value="all",
+                    label="Status",
+                )
+                .classes("w-48")
+                .props("dense outlined dark")
+            )
+            jobs_content = ui.column().classes("w-full gap-2")
+
+            def reload_jobs():
+                result = dispatch_action(
+                    "jobs.list",
+                    {"status": status_filter.value or "all", "limit": 50},
+                    actor_type="ui",
+                    session_id=active_session_id["value"],
+                )
+                jobs_content.clear()
+                with jobs_content:
+                    if not result.success:
+                        ui.label(result.error or "Background jobs could not be loaded.").classes(
+                            "text-sm text-red-300 py-4"
+                        )
+                        return
+                    items = result.data.get("jobs", [])
+                    if not items:
+                        ui.label("No background jobs match this view.").classes(
+                            "text-sm text-slate-400 py-4"
+                        )
+                        return
+                    with ui.scroll_area().classes("w-full max-h-[62vh]"):
+                        with ui.column().classes("w-full gap-2 pr-2"):
+                            for item in items:
+                                status = item.get("status") or "unknown"
+                                status_class = {
+                                    "running": "text-sky-300 border-sky-700/50",
+                                    "done": "text-emerald-300 border-emerald-700/50",
+                                    "cancelled": "text-amber-300 border-amber-700/50",
+                                    "error": "text-red-300 border-red-700/50",
+                                    "interrupted": "text-orange-300 border-orange-700/50",
+                                }.get(status, "text-slate-300 border-slate-700/50")
+                                with ui.element("div").classes(
+                                    "w-full p-3 bg-[#091520] border border-[#1b3040] rounded-md"
+                                ):
+                                    with ui.row().classes(
+                                        "w-full items-start justify-between gap-3 no-wrap"
+                                    ):
+                                        with ui.column().classes("gap-0 grow min-w-0"):
+                                            ui.label(item.get("label") or "Background job").classes(
+                                                "text-sm font-semibold text-slate-100"
+                                            )
+                                            ui.label(
+                                                f"{item['kind'].replace('_', ' ').title()} · "
+                                                f"#{item['id']} · attempt {item.get('attempt') or 1}"
+                                            ).classes("text-[10px] text-slate-500")
+                                        ui.badge(status.upper()).props("outline").classes(
+                                            f"text-[9px] {status_class}"
+                                        )
+                                    ui.label(item.get("message") or "No progress message.").classes(
+                                        "text-xs text-slate-300 mt-2"
+                                    )
+                                    if item["kind"] in {"site_connect", "site_verify"}:
+                                        details = [
+                                            f"{item.get('elapsed_sec') or 0:.0f}s",
+                                            str(item.get("platform") or "site").title(),
+                                        ]
+                                    else:
+                                        details = [
+                                            f"{item.get('elapsed_sec') or 0:.0f}s",
+                                            f"scanned {item.get('scanned') or 0}",
+                                            f"added {item.get('added') or 0}",
+                                        ]
+                                    if item.get("phase"):
+                                        details.append(f"phase {item['phase']}")
+                                    ui.label(" · ".join(details)).classes(
+                                        "text-[10px] text-slate-500"
+                                    )
+                                    if item.get("error"):
+                                        ui.label(item["error"]).classes(
+                                            "text-[10px] text-red-300 mt-1"
+                                        )
+                                    with ui.row().classes("w-full justify-end gap-1 mt-1"):
+                                        target = (
+                                            "/discoveries"
+                                            if item["kind"] in {"sourcing", "profile_enrichment"}
+                                            else (
+                                                "/settings"
+                                                if item["kind"] in {"site_connect", "site_verify"}
+                                                else "/dashboard"
+                                            )
+                                        )
+                                        ui.button(
+                                            icon="open_in_new",
+                                            on_click=lambda url=target: ui.navigate.to(
+                                                url, new_tab=True
+                                            ),
+                                        ).props("flat round dense").tooltip("Open related page")
+
+                                        if item["kind"] == "site_connect" and item.get(
+                                            "ready_for_save"
+                                        ):
+
+                                            def save_selected_site_job(jid=item["id"]):
+                                                saved = dispatch_action(
+                                                    "sites.connect.save",
+                                                    {"job_id": jid},
+                                                    actor_type="ui",
+                                                    session_id=active_session_id["value"],
+                                                )
+                                                ui.notify(
+                                                    (
+                                                        saved.data.get("message")
+                                                        if saved.success
+                                                        else saved.error
+                                                    )
+                                                    or "Save request failed.",
+                                                    type=(
+                                                        "positive" if saved.success else "negative"
+                                                    ),
+                                                )
+                                                reload_jobs()
+
+                                            ui.button(
+                                                icon="save", on_click=save_selected_site_job
+                                            ).props("flat round dense").classes(
+                                                "text-teal-300"
+                                            ).tooltip("Verify and save this login")
+
+                                        if item.get("cancellable"):
+
+                                            def cancel_selected_job(jid=item["id"]):
+                                                cancelled = dispatch_action(
+                                                    "jobs.cancel",
+                                                    {"job_id": jid},
+                                                    actor_type="ui",
+                                                    session_id=active_session_id["value"],
+                                                )
+                                                ui.notify(
+                                                    (
+                                                        cancelled.data.get("message")
+                                                        if cancelled.success
+                                                        else cancelled.error
+                                                    )
+                                                    or "Cancellation failed.",
+                                                    type=(
+                                                        "positive"
+                                                        if cancelled.success
+                                                        else "negative"
+                                                    ),
+                                                )
+                                                reload_jobs()
+
+                                            ui.button(
+                                                icon="stop", on_click=cancel_selected_job
+                                            ).props("flat round dense").classes(
+                                                "text-amber-300"
+                                            ).tooltip("Cancel this job")
+                                        if item.get("retryable"):
+
+                                            def retry_selected_job(jid=item["id"]):
+                                                retried = dispatch_action(
+                                                    "jobs.retry",
+                                                    {"job_id": jid},
+                                                    actor_type="ui",
+                                                    session_id=active_session_id["value"],
+                                                )
+                                                ui.notify(
+                                                    (
+                                                        "Retry started."
+                                                        if retried.success
+                                                        else retried.error or "Retry failed."
+                                                    ),
+                                                    type=(
+                                                        "positive"
+                                                        if retried.success
+                                                        else "negative"
+                                                    ),
+                                                )
+                                                reload_jobs()
+
+                                            ui.button(
+                                                icon="refresh", on_click=retry_selected_job
+                                            ).props(
+                                                'flat round dense aria-label="Retry this job"'
+                                            ).classes(
+                                                "text-teal-300"
+                                            ).tooltip("Retry from stored launch parameters")
+
+            refresh_jobs_button.on("click", lambda _: reload_jobs())
+            status_filter.on("update:model-value", lambda _: reload_jobs())
+            reload_jobs()
+        jobs_dialog.open()
+
+    with ui.element("div").classes("th-copilot-inner"):
+        with ui.element("div").style(
+            "display:flex;align-items:center;justify-content:space-between;"
+            "width:100%;margin-bottom:12px;flex-shrink:0;height:auto"
+        ):
+            ui.label("Copilot").style(
+                "font-weight:700;color:#edf5f7;font-size:13px;white-space:nowrap"
+            )
+            with ui.element("div").style("display:flex;align-items:center;gap:2px;flex-shrink:0"):
                 ui.button(
-                    icon='manage_history',
+                    icon="manage_history",
                     on_click=open_action_history,
-                ).props('flat round dense').classes('text-[#19d3c5]').tooltip('Action history and undo')
+                ).props("flat round dense").classes("text-[#19d3c5]").tooltip(
+                    "Action history and undo"
+                )
 
                 ui.button(
-                    icon='open_in_full',
-                    on_click=lambda: ui.run_javascript('toggleCopilotFullscreen();')
-                ).props('flat round dense').classes('text-[#8195a5]').tooltip('Expand Copilot Fullscreen')
+                    icon="work_history",
+                    on_click=open_background_jobs,
+                ).props("flat round dense").classes("text-[#8195a5]").tooltip("Background jobs")
 
                 ui.button(
-                    icon='refresh',
-                    on_click=clear_chat
-                ).props('flat round dense').classes('text-[#8195a5]').tooltip('Clear Conversation')
+                    icon="open_in_full",
+                    on_click=lambda: ui.run_javascript("toggleCopilotFullscreen();"),
+                ).props("flat round dense").classes("text-[#8195a5]").tooltip(
+                    "Expand Copilot Fullscreen"
+                )
+
+                ui.button(icon="refresh", on_click=clear_chat).props("flat round dense").classes(
+                    "text-[#8195a5]"
+                ).tooltip("Clear Conversation")
 
                 def do_toggle_tts():
                     tts_active["enabled"] = not tts_active["enabled"]
-                    ui.run_javascript('toggleTTS();')
-                    tts_btn.props(f'icon={"volume_up" if tts_active["enabled"] else "volume_off"}')
-                    ui.notify(f'Voice Reply (TTS) {"Enabled" if tts_active["enabled"] else "Muted"}')
+                    ui.run_javascript("toggleTTS();")
+                    tts_btn.props(f"icon={'volume_up' if tts_active['enabled'] else 'volume_off'}")
+                    ui.notify(
+                        f"Voice Reply (TTS) {'Enabled' if tts_active['enabled'] else 'Muted'}"
+                    )
 
-                tts_btn = ui.button(
-                    icon='volume_up',
-                    on_click=do_toggle_tts
-                ).props('flat round dense').classes('text-[#19d3c5]').tooltip('Toggle Voice Reply (TTS On/Mute)')
-                tts_btn.on('pointerdown', js_handler='() => unlockCopilotAudio()')
+                tts_btn = (
+                    ui.button(icon="volume_up", on_click=do_toggle_tts)
+                    .props("flat round dense")
+                    .classes("text-[#19d3c5]")
+                    .tooltip("Toggle Voice Reply (TTS On/Mute)")
+                )
+                tts_btn.on("pointerdown", js_handler="() => unlockCopilotAudio()")
 
                 ui.button(
-                    icon='mic',
-                    on_click=lambda: ui.run_javascript('toggleFreeVoiceRecording();')
-                ).props('flat round dense').classes('text-[#d8941e]').tooltip('Browser Free Voice Input')
+                    icon="mic", on_click=lambda: ui.run_javascript("toggleFreeVoiceRecording();")
+                ).props("flat round dense").classes("text-[#d8941e]").tooltip(
+                    "Browser Free Voice Input"
+                )
 
         def on_session_change(e):
             new_val = e.value
@@ -1068,45 +1463,56 @@ def render_copilot_panel():
             completed_watch["state"] = ()
             _refresh_completed_action_cards()
 
-        with ui.element('div').style('width:100%;margin-bottom:8px;flex-shrink:0'):
-            session_select_ref["el"] = ui.select(
-                options=options,
-                value=active_session_id["value"],
-                on_change=on_session_change,
-            ).classes('w-full text-xs').props('dense outlined dark').tooltip(
-                'Switch conversation context (stays on this hunt when you navigate)'
+        with ui.element("div").style("width:100%;margin-bottom:8px;flex-shrink:0"):
+            session_select_ref["el"] = (
+                ui.select(
+                    options=options,
+                    value=active_session_id["value"],
+                    on_change=on_session_change,
+                )
+                .classes("w-full text-xs")
+                .props("dense outlined dark")
+                .tooltip("Switch conversation context (stays on this hunt when you navigate)")
             )
 
         def _mark_select_ready():
             _COPILOT_STATE["select_ready"] = True
             # Re-assert saved session after Quasar finishes mounting
-            if session_select_ref["el"] and session_select_ref["el"].value != active_session_id["value"]:
+            if (
+                session_select_ref["el"]
+                and session_select_ref["el"].value != active_session_id["value"]
+            ):
                 session_select_ref["el"].value = active_session_id["value"]
                 session_select_ref["el"].update()
 
         ui.timer(0.35, _mark_select_ready, once=True)
 
-        ui.separator().classes('bg-[#1b3040] mb-3 shrink-0')
+        ui.separator().classes("bg-[#1b3040] mb-3 shrink-0")
 
-        chat_container_ref["el"] = ui.column().classes(
-            'w-full p-3 overflow-y-auto mb-2 gap-3 custom-scrollbar copilot-chat-container items-stretch'
-        ).style(
-            'flex:1 1 auto;min-height:120px;border:1px solid #1b3040;border-radius:12px;background:#0b1724'
+        chat_container_ref["el"] = (
+            ui.column()
+            .classes(
+                "w-full p-3 overflow-y-auto mb-2 gap-3 custom-scrollbar copilot-chat-container items-stretch"
+            )
+            .props('tabindex=0 role=log aria-label="Copilot conversation"')
+            .style(
+                "flex:1 1 auto;min-height:120px;border:1px solid #1b3040;border-radius:12px;background:#0b1724"
+            )
         )
 
         render_history()
 
-        approval_container_ref["el"] = ui.column().classes('w-full gap-2 mb-1 shrink-0')
+        approval_container_ref["el"] = ui.column().classes("w-full gap-2 mb-1 shrink-0")
         approval_container_ref["el"].set_visibility(False)
         _refresh_approval_cards()
         ui.timer(1.0, _refresh_approval_cards)
 
-        completed_container_ref["el"] = ui.column().classes('w-full gap-2 mb-1 shrink-0')
+        completed_container_ref["el"] = ui.column().classes("w-full gap-2 mb-1 shrink-0")
         completed_container_ref["el"].set_visibility(False)
         _refresh_completed_action_cards()
         ui.timer(1.5, _refresh_completed_action_cards)
 
-        retry_container_ref["el"] = ui.column().classes('w-full gap-1 mb-1 shrink-0')
+        retry_container_ref["el"] = ui.column().classes("w-full gap-1 mb-1 shrink-0")
         retry_container_ref["el"].set_visibility(False)
         _refresh_retry_jobs()
         ui.timer(2.0, _refresh_retry_jobs)
@@ -1118,6 +1524,7 @@ def render_copilot_panel():
 
         def _refresh_busy_banner():
             from app.hunts import sourcing_jobs
+
             jobs = sourcing_jobs.list_active_jobs()
             banner = busy_banner_ref["el"]
             if not banner:
@@ -1167,7 +1574,11 @@ def render_copilot_panel():
                         f"{job.get('message') or ''} "
                         f"Open **Discoveries** to approve or reject them."
                     )
-                    notify_type = "warning" if job.get("timed_out") or job.get("session_issue") else "positive"
+                    notify_type = (
+                        "warning"
+                        if job.get("timed_out") or job.get("session_issue")
+                        else "positive"
+                    )
                 try:
                     conversation_manager.add_assistant_message(
                         summary, session_id=active_session_id["value"]
@@ -1183,6 +1594,7 @@ def render_copilot_panel():
             if jobs:
                 banner.set_visibility(True)
                 job = jobs[0]
+                busy_banner_ref["job_id"] = job["id"]
                 title = job.get("label") or "Talent search"
                 elapsed = job.get("elapsed_label") or ""
                 detail = (
@@ -1196,6 +1608,7 @@ def render_copilot_panel():
                     busy_banner_ref["detail"].set_text(detail)
             else:
                 banner.set_visibility(False)
+                busy_banner_ref["job_id"] = None
             if send_btn_ref["el"]:
                 if busy_state["chat"]:
                     send_btn_ref["el"].props("disable")
@@ -1203,62 +1616,84 @@ def render_copilot_panel():
                     send_btn_ref["el"].props(remove="disable")
 
         def _cancel_busy():
-            from app.hunts import sourcing_jobs
-            n = sourcing_jobs.cancel_all()
+            from app.actions.api import dispatch_action
+
+            job_id = busy_banner_ref.get("job_id")
+            if not job_id:
+                ui.notify("No active search to cancel.", type="info")
+                return
+            result = dispatch_action(
+                "jobs.cancel",
+                {"job_id": job_id},
+                actor_type="ui",
+                session_id=active_session_id["value"],
+            )
             ui.notify(
-                f"Cancel requested for {n} job(s)." if n else "No active crawl to cancel.",
-                type="info",
+                (
+                    result.data.get("message")
+                    if result.success
+                    else result.error or "Cancellation failed."
+                ),
+                type="positive" if result.success else "negative",
             )
             _refresh_busy_banner()
 
-        with ui.element('div').classes('w-full mb-1').style(
-            'flex-direction:column;gap:2px;padding:5px 7px;'
-            'background:#3d2a0f;border:1px solid #f0a020;'
-            'border-radius:7px;flex-shrink:0'
-        ) as busy_banner:
+        with (
+            ui.element("div")
+            .classes("w-full mb-1")
+            .style(
+                "flex-direction:column;gap:2px;padding:5px 7px;"
+                "background:#3d2a0f;border:1px solid #f0a020;"
+                "border-radius:7px;flex-shrink:0"
+            ) as busy_banner
+        ):
             busy_banner_ref["el"] = busy_banner
             busy_banner.set_visibility(False)
-            with ui.row().classes('w-full items-center justify-between gap-2'):
-                with ui.row().classes('items-center gap-1 grow min-w-0'):
-                    ui.spinner(size='xs', color='orange')
-                    with ui.column().classes('gap-0 grow'):
-                        busy_banner_ref["label"] = ui.label('Working…').classes(
-                            'text-[10px] font-semibold text-orange-200'
+            with ui.row().classes("w-full items-center justify-between gap-2"):
+                with ui.row().classes("items-center gap-1 grow min-w-0"):
+                    ui.spinner(size="xs", color="orange")
+                    with ui.column().classes("gap-0 grow"):
+                        busy_banner_ref["label"] = ui.label("Working…").classes(
+                            "text-[10px] font-semibold text-orange-200"
                         )
-                        busy_banner_ref["detail"] = ui.label('').classes(
-                            'text-[9px] text-orange-100/70 leading-tight'
+                        busy_banner_ref["detail"] = ui.label("").classes(
+                            "text-[9px] text-orange-100/70 leading-tight"
                         )
-                ui.button(icon='stop', on_click=_cancel_busy).props(
-                    'flat round dense size=xs'
-                ).classes('text-orange-100').tooltip('Cancel active search')
+                ui.button(icon="stop", on_click=_cancel_busy).props(
+                    "flat round dense size=xs"
+                ).classes("text-orange-100").tooltip("Cancel active search")
 
         ui.timer(1.0, _refresh_busy_banner)
 
-        with ui.element('div').style(
-            'display:flex;gap:6px;width:100%;margin-bottom:8px;overflow-x:auto;flex-shrink:0;flex-wrap:nowrap'
+        with ui.element("div").style(
+            "display:flex;gap:6px;width:100%;margin-bottom:8px;overflow-x:auto;flex-shrink:0;flex-wrap:nowrap"
         ):
-            for chip_text in ["Draft outreach message", "Move top 5 to pipeline", "Show match scores"]:
-                ui.button(
-                    chip_text,
-                    on_click=lambda t=chip_text: send_quick_prompt(t)
-                ).props('flat dense no-caps').style(
-                    'font-size:11px;color:#8195a5;background:#0e1b28;border:1px solid #1b3040;'
-                    'border-radius:999px;padding:4px 10px;white-space:nowrap;min-height:28px;height:auto;width:auto'
+            for chip_text in [
+                "Draft outreach message",
+                "Move top 5 to pipeline",
+                "Show match scores",
+            ]:
+                ui.button(chip_text, on_click=lambda t=chip_text: send_quick_prompt(t)).props(
+                    "flat dense no-caps"
+                ).style(
+                    "font-size:11px;color:#8195a5;background:#0e1b28;border:1px solid #1b3040;"
+                    "border-radius:999px;padding:4px 10px;white-space:nowrap;min-height:28px;height:auto;width:auto"
                 )
 
-        with ui.element('div').classes('th-copilot-composer'):
-            input_field_ref["el"] = ui.textarea(placeholder='Ask Copilot…').classes(
-                'grow text-[#dce7eb] bg-transparent border-none th-copilot-input'
-            ).props(
-                'borderless dark autogrow rows=2 autocomplete=off autocorrect=off autocapitalize=off spellcheck=false'
-            ).style(
-                'font-size:14px;line-height:1.4'
+        with ui.element("div").classes("th-copilot-composer"):
+            input_field_ref["el"] = (
+                ui.textarea(placeholder="Ask Copilot…")
+                .classes("grow text-[#dce7eb] bg-transparent border-none th-copilot-input")
+                .props(
+                    "borderless dark autogrow rows=2 autocomplete=off autocorrect=off autocapitalize=off spellcheck=false"
+                )
+                .style("font-size:14px;line-height:1.4")
             )
 
-            input_field_ref["el"].on('keydown', handle_input_keydown)
-            input_field_ref["el"].on('pointerdown', js_handler='() => unlockCopilotAudio()')
-            input_field_ref["el"].on('keydown.enter', handle_send)
-            ui.timer(0.2, lambda: ui.run_javascript('thDisableCopilotAutofill();'), once=True)
+            input_field_ref["el"].on("keydown", handle_input_keydown)
+            input_field_ref["el"].on("pointerdown", js_handler="() => unlockCopilotAudio()")
+            input_field_ref["el"].on("keydown.enter", handle_send)
+            ui.timer(0.2, lambda: ui.run_javascript("thDisableCopilotAutofill();"), once=True)
 
             def open_prompt_history():
                 if not input_history:
@@ -1267,14 +1702,17 @@ def render_copilot_panel():
                         type="info",
                     )
                     return
-                with ui.dialog() as hist_dlg, ui.card().classes(
-                    'w-full max-w-md p-4 th-card border border-teal-500/30 gap-2'
+                with (
+                    ui.dialog() as hist_dlg,
+                    ui.card().classes(
+                        "w-full max-w-md p-4 th-card border border-teal-500/30 gap-2"
+                    ),
                 ):
-                    ui.label('Recent prompts').classes('text-sm font-bold text-slate-100')
-                    ui.label('Click to reuse · also use ↑ / ↓ in the input').classes(
-                        'text-[11px] text-slate-500 mb-1'
+                    ui.label("Recent prompts").classes("text-sm font-bold text-slate-100")
+                    ui.label("Click to reuse · also use ↑ / ↓ in the input").classes(
+                        "text-[11px] text-slate-500 mb-1"
                     )
-                    with ui.column().classes('w-full gap-1 max-h-80 overflow-y-auto'):
+                    with ui.column().classes("w-full gap-1 max-h-80 overflow-y-auto"):
                         # Newest first
                         for text in reversed(input_history[-40:]):
                             preview = text if len(text) <= 120 else text[:117] + "…"
@@ -1286,47 +1724,46 @@ def render_copilot_panel():
                                 hist_dlg.close()
 
                             ui.button(preview, on_click=_pick).props(
-                                'flat dense no-caps align=left'
+                                "flat dense no-caps align=left"
                             ).classes(
-                                'w-full text-left text-xs text-slate-300 hover:bg-slate-800/80'
+                                "w-full text-left text-xs text-slate-300 hover:bg-slate-800/80"
                             ).style(
-                                'justify-content:flex-start;white-space:normal;height:auto;'
-                                'min-height:32px;padding:6px 8px'
+                                "justify-content:flex-start;white-space:normal;height:auto;"
+                                "min-height:32px;padding:6px 8px"
                             )
-                    ui.button('Close', on_click=hist_dlg.close).props('flat').classes(
-                        'text-slate-400 text-xs self-end'
+                    ui.button("Close", on_click=hist_dlg.close).props("flat").classes(
+                        "text-slate-400 text-xs self-end"
                     )
                 hist_dlg.open()
 
             ui.button(
-                icon='history',
+                icon="history",
                 on_click=open_prompt_history,
-            ).props('flat round dense').classes(
-                'th-copilot-composer-tool text-[#8195a5] hover:text-[#19d3c5]'
-            ).tooltip(f'Prompt history ({len(input_history)}) · ↑↓ keys')
+            ).props("flat round dense").classes(
+                "th-copilot-composer-tool text-[#8195a5] hover:text-[#19d3c5]"
+            ).tooltip(f"Prompt history ({len(input_history)}) · ↑↓ keys")
 
             ui.button(
-                icon='mic',
-                on_click=lambda: ui.run_javascript('toggleFreeVoiceRecording();')
-            ).props('flat round dense').classes('th-copilot-composer-tool text-[#8195a5] hover:text-[#19d3c5]').tooltip('Voice input').on(
-                'pointerdown', js_handler='() => unlockCopilotAudio()'
-            )
+                icon="mic", on_click=lambda: ui.run_javascript("toggleFreeVoiceRecording();")
+            ).props("flat round dense").classes(
+                "th-copilot-composer-tool text-[#8195a5] hover:text-[#19d3c5]"
+            ).tooltip("Voice input").on("pointerdown", js_handler="() => unlockCopilotAudio()")
 
-            send_btn_ref["el"] = ui.button(
-                icon='arrow_upward',
-                on_click=handle_send
-            ).props('round dense').classes('th-copilot-send').style(
-                'background:#10a99f;color:#071019'
+            send_btn_ref["el"] = (
+                ui.button(icon="arrow_upward", on_click=handle_send)
+                .props("round dense")
+                .classes("th-copilot-send")
+                .style("background:#10a99f;color:#071019")
             )
-            send_btn_ref["el"].on('pointerdown', js_handler='() => unlockCopilotAudio()')
+            send_btn_ref["el"].on("pointerdown", js_handler="() => unlockCopilotAudio()")
 
         # Auto-run pending Launch Hunt sourcing prompt (set by hunts/launch.py)
         async def _run_pending_launch_prompt():
             await asyncio.sleep(0.4)
             prompt = None
             try:
-                if hasattr(ui, 'app') and hasattr(ui.app, 'storage'):
-                    prompt = ui.app.storage.user.pop('pending_copilot_prompt', None)
+                if hasattr(ui, "app") and hasattr(ui.app, "storage"):
+                    prompt = ui.app.storage.user.pop("pending_copilot_prompt", None)
             except Exception:
                 prompt = None
             if not prompt or not input_field_ref["el"]:
@@ -1336,8 +1773,8 @@ def render_copilot_panel():
 
         try:
             has_pending = False
-            if hasattr(ui, 'app') and hasattr(ui.app, 'storage'):
-                has_pending = bool(ui.app.storage.user.get('pending_copilot_prompt'))
+            if hasattr(ui, "app") and hasattr(ui.app, "storage"):
+                has_pending = bool(ui.app.storage.user.get("pending_copilot_prompt"))
             if has_pending:
                 asyncio.create_task(_run_pending_launch_prompt())
         except Exception:

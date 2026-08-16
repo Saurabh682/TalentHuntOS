@@ -28,7 +28,7 @@ def _safe_slug(text: str, max_len: int = 48) -> str:
 
 def url_key(url: str) -> str:
     raw = (url or "").strip().lower().split("?")[0].rstrip("/")
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
 def snapshot_dir_for(*, url: str, candidate_id: Optional[int] = None) -> Path:
@@ -161,8 +161,8 @@ def register_snapshot_record(
 ) -> None:
     """Insert CandidateProfileSnapshot row (best-effort)."""
     try:
-        from app.infrastructure.db import SessionFactory
         from app.candidates.models import CandidateProfileSnapshot
+        from app.infrastructure.db import SessionFactory
 
         with SessionFactory() as db:
             row = CandidateProfileSnapshot(
@@ -181,9 +181,10 @@ def register_snapshot_record(
 
 def list_snapshots_for_candidate(candidate_id: int) -> List[Dict[str, Any]]:
     try:
-        from app.infrastructure.db import SessionFactory
-        from app.candidates.models import CandidateProfileSnapshot
         from sqlalchemy import select
+
+        from app.candidates.models import CandidateProfileSnapshot
+        from app.infrastructure.db import SessionFactory
 
         with SessionFactory() as db:
             rows = list(

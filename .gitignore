@@ -9,9 +9,16 @@ __pycache__/
 *.pyo
 *.pyd
 .pytest_cache/
+.pytest-*/
+.hypothesis/
+output/accessibility/
+output/bandit-report.json
+output/pytest-temp*/
+output/*.log
 build/
 dist/
 *.egg-info/
+node_modules/
 
 # Databases & Local Stores
 *.db
@@ -22,6 +29,7 @@ dist/
 data/
 models/kokoro/*.onnx
 models/kokoro/*.bin
+bin/llama.cpp/
 
 # Scratch & Cache directories
 graphify-out/

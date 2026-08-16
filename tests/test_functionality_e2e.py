@@ -1,26 +1,30 @@
 """End-to-end functionality & integration test suite for TalentHunt OS core workflows."""
 
-import pytest
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy.orm import Session
 
-from app.infrastructure.db import SessionFactory, init_db
-from app.hunts.service import create_hunt, get_hunt, list_hunts, update_hunt, get_hunt_metrics
-from app.hunts.pipeline import get_pipeline_data, move_candidate_stage, add_candidate_to_hunt
+import pytest
+
+from app.analytics.service import get_hunt_funnel_data, get_kpi_summary
 from app.candidates.service import (
-    create_candidate,
-    get_candidate,
-    list_candidates,
-    update_candidate,
     add_candidate_note,
     add_candidate_tag,
+    create_candidate,
+    update_candidate,
 )
+from app.communications.outreach_service import (
+    add_step_to_sequence,
+    create_sequence,
+    enroll_candidate,
+    process_due_outreach_steps,
+)
+from app.communications.service import (
+    list_communications,
+)
+from app.communications.template_engine import generate_candidate_outreach
+from app.hunts.pipeline import add_candidate_to_hunt, get_pipeline_data, move_candidate_stage
+from app.hunts.service import create_hunt, get_hunt_metrics
+from app.infrastructure.db import SessionFactory, init_db
 from app.intelligence.auto_pilot import run_autopilot_hunt_job
-from app.communications.service import create_template, list_templates, log_communication, list_communications
-from app.communications.outreach_service import create_sequence, add_step_to_sequence, enroll_candidate, process_due_outreach_steps
-from app.communications.template_engine import generate_candidate_outreach, render_template
-from app.analytics.service import get_kpi_summary, get_hunt_funnel_data
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -29,9 +33,9 @@ def setup_database():
     init_db()
     yield
     with SessionFactory() as db:
-        from app.hunts.models import TalentHunt
         from app.candidates.models import Candidate
         from app.communications.models import OutreachSequence
+        from app.hunts.models import TalentHunt
         db.query(TalentHunt).filter(TalentHunt.title.like("%E2E%") | TalentHunt.title.like("%Kanban%")).delete(synchronize_session=False)
         db.query(Candidate).filter(Candidate.email.like("%example.com%")).delete(synchronize_session=False)
         db.query(OutreachSequence).filter(OutreachSequence.name.like("%E2E Sequence%")).delete(synchronize_session=False)
@@ -205,14 +209,13 @@ def test_e2e_communications_outreach_sequence():
         assert enr is not None
         assert enr.status == "active"
 
-        # 3. Process Drip Steps
-        results = process_due_outreach_steps(db)
-        assert isinstance(results, list)
+        # 3. The legacy engine cannot bypass R4 recipient approval.
+        with pytest.raises(PermissionError, match="R4 approved delivery action"):
+            process_due_outreach_steps(db)
 
-        # 4. Verify Logged Communications
+        # 4. No communication was manufactured by the rejected legacy path.
         logs = list_communications(db, candidate_id=cand.id)
-        assert len(logs) >= 1
-        assert logs[0].candidate_id == cand.id
+        assert logs == []
 
 
 def test_e2e_analytics_and_reporting_service():

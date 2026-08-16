@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger("talenthunt.browser.session_auth")
 
@@ -284,15 +284,17 @@ def _interactive_connect_sync(
                             final_url=verify.get("final_url") or page.url,
                             detail=verify.get("detail") or "Verified",
                         )
-                        result.update({
-                            "status": "success",
-                            "session_id": sess.get("id"),
-                            "cookie_count": len(context.cookies()),
-                            "final_url": page.url,
-                            "encrypted": True,
-                            "verified": True,
-                            "verify_detail": verify.get("detail"),
-                        })
+                        result.update(
+                            {
+                                "status": "success",
+                                "session_id": sess.get("id"),
+                                "cookie_count": len(context.cookies()),
+                                "final_url": page.url,
+                                "encrypted": True,
+                                "verified": True,
+                                "verify_detail": verify.get("detail"),
+                            }
+                        )
                         saved = True
                         _set_progress(progress, f"{cfg['label']} verified and saved.")
                     else:
@@ -319,9 +321,8 @@ def _interactive_connect_sync(
                     verify = _verify_with_context(context, plat, cfg)
                     if not verify.get("ok"):
                         msg = (
-                            (verify.get("detail") or "Login check failed")
-                            + " — Chromium stays open. Finish login, then Save again."
-                        )
+                            verify.get("detail") or "Login check failed"
+                        ) + " — Chromium stays open. Finish login, then Save again."
                         result["error"] = msg
                         _set_progress(progress, msg)
                         logger.info("[session_auth] Save rejected — verify failed for %s", plat)
@@ -339,15 +340,17 @@ def _interactive_connect_sync(
                             final_url=verify.get("final_url") or page.url,
                             detail=verify.get("detail") or "Verified",
                         )
-                        result.update({
-                            "status": "success",
-                            "session_id": sess.get("id"),
-                            "cookie_count": len(context.cookies()),
-                            "final_url": page.url,
-                            "encrypted": True,
-                            "verified": True,
-                            "verify_detail": verify.get("detail"),
-                        })
+                        result.update(
+                            {
+                                "status": "success",
+                                "session_id": sess.get("id"),
+                                "cookie_count": len(context.cookies()),
+                                "final_url": page.url,
+                                "encrypted": True,
+                                "verified": True,
+                                "verify_detail": verify.get("detail"),
+                            }
+                        )
                         saved = True
                         _set_progress(progress, f"{cfg['label']} verified and saved.")
                         logger.info(
@@ -391,8 +394,8 @@ def _persist_cookies(
     cookies: List[Dict[str, Any]],
     target_url: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    from app.infrastructure.db import SessionFactory
     from app.communications.service import upsert_browser_session_cookies
+    from app.infrastructure.db import SessionFactory
 
     clean: List[Dict[str, Any]] = []
     for c in cookies:
@@ -438,8 +441,9 @@ def _set_session_verify_meta(
         return
     import json
     from datetime import datetime, timezone
-    from app.infrastructure.db import SessionFactory
+
     from app.communications.service import get_browser_session
+    from app.infrastructure.db import SessionFactory
 
     with SessionFactory() as db:
         row = get_browser_session(db, int(session_id))
@@ -461,7 +465,11 @@ def _verify_with_context(context, platform: str, cfg: Dict[str, Any]) -> Dict[st
     """Navigate to home with current context; decide if session looks authenticated."""
     try:
         page = context.new_page()
-        page.goto(cfg.get("home_url") or cfg.get("login_url"), wait_until="domcontentloaded", timeout=45000)
+        page.goto(
+            cfg.get("home_url") or cfg.get("login_url"),
+            wait_until="domcontentloaded",
+            timeout=45000,
+        )
         try:
             page.wait_for_load_state("networkidle", timeout=8000)
         except Exception:
@@ -523,27 +531,51 @@ def _evaluate_login_state(
     }
 
 
-def verify_platform_session(platform: str, *, headless: bool = True) -> Dict[str, Any]:
+def verify_platform_session(
+    platform: str,
+    *,
+    headless: bool = True,
+    cancel_check: Callable[[], bool] | None = None,
+) -> Dict[str, Any]:
     """Open the site with saved cookies and confirm the login still works."""
     import concurrent.futures
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        fut = pool.submit(_verify_platform_session_sync, platform, headless=headless)
+        fut = pool.submit(
+            _verify_platform_session_sync,
+            platform,
+            headless=headless,
+            cancel_check=cancel_check,
+        )
         return fut.result(timeout=90)
 
 
-def _verify_platform_session_sync(platform: str, *, headless: bool = True) -> Dict[str, Any]:
+def _verify_platform_session_sync(
+    platform: str,
+    *,
+    headless: bool = True,
+    cancel_check: Callable[[], bool] | None = None,
+) -> Dict[str, Any]:
     plat = (platform or "").strip().lower()
     cfg = PLATFORM_LOGIN.get(plat)
     if not cfg:
         return {"status": "error", "ok": False, "error": f"Unsupported platform: {platform}"}
+    if cancel_check and cancel_check():
+        return {
+            "status": "cancelled",
+            "ok": False,
+            "platform": plat,
+            "error": "Verification cancelled before browser access.",
+        }
 
-    from app.infrastructure.db import SessionFactory
     from app.communications.service import get_decrypted_cookies_for_platform, list_browser_sessions
+    from app.infrastructure.db import SessionFactory
 
     with SessionFactory() as db:
         cookies = get_decrypted_cookies_for_platform(db, plat)
-        sessions = [s for s in list_browser_sessions(db, platform=plat) if s.is_active and s.cookies_json]
+        sessions = [
+            s for s in list_browser_sessions(db, platform=plat) if s.is_active and s.cookies_json
+        ]
         session_id = sessions[0].id if sessions else None
 
     if not cookies:
@@ -600,6 +632,14 @@ def _verify_platform_session_sync(platform: str, *, headless: bool = True) -> Di
         logger.exception("verify_platform_session failed")
         return {"status": "error", "ok": False, "platform": plat, "error": str(exc)}
 
+    if cancel_check and cancel_check():
+        return {
+            "status": "cancelled",
+            "ok": False,
+            "platform": plat,
+            "error": "Verification cancelled before session metadata was changed.",
+        }
+
     _set_session_verify_meta(
         session_id,
         ok=bool(verify.get("ok")),
@@ -628,8 +668,9 @@ def _verify_platform_session_sync(platform: str, *, headless: bool = True) -> Di
 def get_platform_connection_status() -> List[Dict[str, Any]]:
     """UI-friendly status for each supported platform."""
     import json
+
+    from app.communications.service import get_decrypted_cookies_for_platform, list_browser_sessions
     from app.infrastructure.db import SessionFactory, init_db
-    from app.communications.service import list_browser_sessions, get_decrypted_cookies_for_platform
     from app.infrastructure.secret_box import is_sealed
 
     init_db()
@@ -649,16 +690,18 @@ def get_platform_connection_status() -> List[Dict[str, Any]]:
         for plat, cfg in PLATFORM_LOGIN.items():
             sess = by_plat.get(plat)
             if not sess or not sess.cookies_json:
-                out.append({
-                    "platform": plat,
-                    "label": cfg["label"],
-                    "status": "disconnected",
-                    "encrypted": False,
-                    "verified": False,
-                    "session_id": None,
-                    "last_accessed_at": None,
-                    "verify_detail": None,
-                })
+                out.append(
+                    {
+                        "platform": plat,
+                        "label": cfg["label"],
+                        "status": "disconnected",
+                        "encrypted": False,
+                        "verified": False,
+                        "session_id": None,
+                        "last_accessed_at": None,
+                        "verify_detail": None,
+                    }
+                )
                 continue
 
             meta: Dict[str, Any] = {}
@@ -668,7 +711,7 @@ def get_platform_connection_status() -> List[Dict[str, Any]]:
                 except Exception:
                     meta = {}
 
-            cookies = get_decrypted_cookies_for_platform(db, plat) or []
+            cookies = get_decrypted_cookies_for_platform(db, plat, touch=False) or []
             has_auth = bool(cookies) and (
                 cfg.get("manual_save_only") or _has_required_cookies(plat, cookies)
             )
@@ -681,29 +724,43 @@ def get_platform_connection_status() -> List[Dict[str, Any]]:
             else:
                 status = "connected"  # cookies saved, not proven
 
-            out.append({
-                "platform": plat,
-                "label": cfg["label"],
-                "status": status,
-                "encrypted": is_sealed(sess.cookies_json),
-                "verified": verified,
-                "session_id": sess.id,
-                "session_name": sess.session_name,
-                "last_accessed_at": sess.last_accessed_at.isoformat()
-                if sess.last_accessed_at
-                else (sess.created_at.isoformat() if sess.created_at else None),
-                "verify_detail": meta.get("detail"),
-                "verified_at": meta.get("verified_at"),
-                "cookie_count": len(cookies),
-            })
+            out.append(
+                {
+                    "platform": plat,
+                    "label": cfg["label"],
+                    "status": status,
+                    "encrypted": is_sealed(sess.cookies_json),
+                    "verified": verified,
+                    "session_id": sess.id,
+                    "session_name": sess.session_name,
+                    "last_accessed_at": sess.last_accessed_at.isoformat()
+                    if sess.last_accessed_at
+                    else (sess.created_at.isoformat() if sess.created_at else None),
+                    "verify_detail": meta.get("detail"),
+                    "verified_at": meta.get("verified_at"),
+                    "cookie_count": len(cookies),
+                }
+            )
     return out
 
 
-def disconnect_platform(platform: str, *, actor_type: str = "ui") -> Dict[str, Any]:
-    from app.infrastructure.db import SessionFactory
+def disconnect_platform(
+    platform: str,
+    *,
+    actor_type: str = "ui",
+    session_id: str | None = None,
+) -> Dict[str, Any]:
     from app.communications.service import deactivate_browser_sessions_for_platform
+    from app.infrastructure.db import SessionFactory
 
     plat = (platform or "").strip().lower()
+    if plat not in PLATFORM_LOGIN:
+        return {"status": "error", "platform": plat, "deactivated": 0}
     with SessionFactory() as db:
-        n = deactivate_browser_sessions_for_platform(db, plat, actor_type=actor_type)
+        n = deactivate_browser_sessions_for_platform(
+            db,
+            plat,
+            actor_type=actor_type,
+            session_id=session_id,
+        )
     return {"status": "success", "platform": plat, "deactivated": n}

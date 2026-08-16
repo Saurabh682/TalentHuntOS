@@ -8,9 +8,21 @@ import time
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
+from ipaddress import ip_address
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import select
+
+
+def _allows_passwordless_smtp(account) -> bool:
+    """Allow no-auth SMTP only for a literal loopback development endpoint."""
+    host = (account.smtp_host or "").strip().strip("[]").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _base_result(
@@ -73,6 +85,26 @@ def _load_account(db, from_account: Optional[str] = None):
     return account if account and account.is_active else None
 
 
+def get_delivery_account_summary(from_account: Optional[str] = None) -> Dict[str, Any]:
+    """Return non-secret SMTP sender details for an approval preview."""
+    from app.infrastructure.db import SessionFactory
+
+    with SessionFactory() as db:
+        account = _load_account(db, from_account)
+        configured = bool(
+            account
+            and account.smtp_host
+            and (account.smtp_password or _allows_passwordless_smtp(account))
+        )
+        return {
+            "configured": configured,
+            "email_address": account.email_address if account else None,
+            "display_name": account.display_name if account else None,
+            "smtp_host": account.smtp_host if account else None,
+            "smtp_port": account.smtp_port if account else None,
+        }
+
+
 def send_email(
     to_email: str,
     subject: str,
@@ -91,21 +123,25 @@ def send_email(
         cc=cc,
     )
     if not to_email or "@" not in to_email:
-        result.update({
-            "status": "failed",
-            "error": f"Invalid recipient email address: '{to_email}'",
-        })
+        result.update(
+            {
+                "status": "failed",
+                "error": f"Invalid recipient email address: '{to_email}'",
+            }
+        )
         return result
 
     from app.infrastructure.db import SessionFactory
 
     with SessionFactory() as db:
         account = _load_account(db, from_account)
-        if not account or not account.smtp_password:
-            result.update({
-                "status": "not_configured",
-                "error": "SMTP delivery is not configured. The communication can be logged, but was not sent.",
-            })
+        if not account or (not account.smtp_password and not _allows_passwordless_smtp(account)):
+            result.update(
+                {
+                    "status": "not_configured",
+                    "error": "SMTP delivery is not configured. The communication can be logged, but was not sent.",
+                }
+            )
             return result
 
         sender = account.email_address
@@ -133,13 +169,15 @@ def send_email(
             result.update({"status": "failed", "error": f"SMTP delivery failed: {exc}"})
             return result
 
-    result.update({
-        "success": True,
-        "delivered": True,
-        "status": "sent",
-        "error": None,
-        "message_id": message_id,
-    })
+    result.update(
+        {
+            "success": True,
+            "delivered": True,
+            "status": "sent",
+            "error": None,
+            "message_id": message_id,
+        }
+    )
     return result
 
 
@@ -159,7 +197,7 @@ def verify_email_connection(
 
     with SessionFactory() as db:
         account = db.get(EmailAccount, account_id) if account_id else _load_account(db)
-        if not account or not account.smtp_password:
+        if not account or (not account.smtp_password and not _allows_passwordless_smtp(account)):
             return {
                 "status": "not_configured",
                 "smtp_status": "Not configured",

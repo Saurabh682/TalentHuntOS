@@ -38,9 +38,7 @@ def _legacy_schema_compatibility(conn: Connection) -> None:
         }
         for name, sql_type in expected.items():
             if name not in hunt_candidate_columns:
-                conn.exec_driver_sql(
-                    f"ALTER TABLE hunt_candidates ADD COLUMN {name} {sql_type}"
-                )
+                conn.exec_driver_sql(f"ALTER TABLE hunt_candidates ADD COLUMN {name} {sql_type}")
 
     search_config_columns = _table_columns(conn, "hunt_search_configs")
     if search_config_columns:
@@ -69,9 +67,7 @@ def _legacy_schema_compatibility(conn: Connection) -> None:
 
     user_columns = _table_columns(conn, "users")
     if user_columns and "password_hash" not in user_columns:
-        conn.exec_driver_sql(
-            "ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"
-        )
+        conn.exec_driver_sql("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)")
     if user_columns:
         conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_single_admin_role "
@@ -136,9 +132,7 @@ def _linkedin_profile_capture(conn: Connection) -> None:
             continue
         for name, sql_type in columns.items():
             if name not in existing:
-                conn.exec_driver_sql(
-                    f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}"
-                )
+                conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {sql_type}")
 
 
 def _pending_action_approvals(conn: Connection) -> None:
@@ -167,7 +161,16 @@ def _pending_action_approvals(conn: Connection) -> None:
         "CREATE UNIQUE INDEX IF NOT EXISTS ix_pending_action_approvals_token_hash "
         "ON pending_action_approvals(token_hash)"
     )
-    for column in ("action_name", "fingerprint", "user_id", "session_id", "request_id", "status", "created_at", "expires_at"):
+    for column in (
+        "action_name",
+        "fingerprint",
+        "user_id",
+        "session_id",
+        "request_id",
+        "status",
+        "created_at",
+        "expires_at",
+    ):
         conn.exec_driver_sql(
             f"CREATE INDEX IF NOT EXISTS ix_pending_action_approvals_{column} "
             f"ON pending_action_approvals({column})"
@@ -195,8 +198,14 @@ def _action_resource_locks(conn: Connection) -> None:
         "ON action_resource_locks(resource_key) WHERE status = 'active'"
     )
     for column in (
-        "lease_id", "resource_key", "action_name", "request_id", "user_id",
-        "session_id", "status", "expires_at",
+        "lease_id",
+        "resource_key",
+        "action_name",
+        "request_id",
+        "user_id",
+        "session_id",
+        "status",
+        "expires_at",
     ):
         conn.exec_driver_sql(
             f"CREATE INDEX IF NOT EXISTS ix_action_resource_locks_{column} "
@@ -228,8 +237,13 @@ def _action_tool_calls(conn: Connection) -> None:
         "ON action_tool_calls(tool_call_id)"
     )
     for column in (
-        "tool_name", "action_name", "action_execution_id", "actor_type",
-        "session_id", "status", "started_at",
+        "tool_name",
+        "action_name",
+        "action_execution_id",
+        "actor_type",
+        "session_id",
+        "status",
+        "started_at",
     ):
         conn.exec_driver_sql(
             f"CREATE INDEX IF NOT EXISTS ix_action_tool_calls_{column} "
@@ -271,12 +285,141 @@ def _background_jobs(conn: Connection) -> None:
         "ON background_jobs(kind) WHERE kind = 'sourcing' AND status = 'running'"
     )
     for column in (
-        "kind", "status", "hunt_id", "parent_job_id", "created_at",
-        "started_at", "heartbeat_at", "finished_at",
+        "kind",
+        "status",
+        "hunt_id",
+        "parent_job_id",
+        "created_at",
+        "started_at",
+        "heartbeat_at",
+        "finished_at",
     ):
         conn.exec_driver_sql(
-            f"CREATE INDEX IF NOT EXISTS ix_background_jobs_{column} "
-            f"ON background_jobs({column})"
+            f"CREATE INDEX IF NOT EXISTS ix_background_jobs_{column} ON background_jobs({column})"
+        )
+
+
+def _candidate_full_text_search(conn: Connection) -> None:
+    """Create derived FTS5 indexes and triggers for canonical and Common Pool search."""
+    try:
+        conn.exec_driver_sql(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS candidate_search_fts USING fts5("
+            "candidate_id UNINDEXED, full_name, current_title, current_company, location, email, "
+            "tokenize='unicode61 remove_diacritics 2'"
+            ")"
+        )
+        conn.exec_driver_sql(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS discovery_search_fts USING fts5("
+            "discovered_profile_id UNINDEXED, full_name, headline, current_company, location, "
+            "platform, snippet, tokenize='unicode61 remove_diacritics 2'"
+            ")"
+        )
+    except Exception as exc:
+        logger.warning("SQLite FTS5 is unavailable; keyword search will use LIKE fallback: %s", exc)
+        return
+
+    conn.exec_driver_sql(
+        "CREATE TRIGGER IF NOT EXISTS candidates_fts_insert AFTER INSERT ON candidates BEGIN "
+        "INSERT INTO candidate_search_fts(candidate_id, full_name, current_title, current_company, location, email) "
+        "VALUES (new.id, COALESCE(new.full_name, ''), COALESCE(new.current_title, ''), "
+        "COALESCE(new.current_company, ''), COALESCE(new.location, ''), COALESCE(new.email, '')); END"
+    )
+    conn.exec_driver_sql(
+        "CREATE TRIGGER IF NOT EXISTS candidates_fts_delete AFTER DELETE ON candidates BEGIN "
+        "DELETE FROM candidate_search_fts WHERE candidate_id = old.id; END"
+    )
+    conn.exec_driver_sql(
+        "CREATE TRIGGER IF NOT EXISTS candidates_fts_update AFTER UPDATE ON candidates BEGIN "
+        "DELETE FROM candidate_search_fts WHERE candidate_id = old.id; "
+        "INSERT INTO candidate_search_fts(candidate_id, full_name, current_title, current_company, location, email) "
+        "VALUES (new.id, COALESCE(new.full_name, ''), COALESCE(new.current_title, ''), "
+        "COALESCE(new.current_company, ''), COALESCE(new.location, ''), COALESCE(new.email, '')); END"
+    )
+    conn.exec_driver_sql(
+        "CREATE TRIGGER IF NOT EXISTS discoveries_fts_insert AFTER INSERT ON discovered_profiles BEGIN "
+        "INSERT INTO discovery_search_fts(discovered_profile_id, full_name, headline, current_company, location, platform, snippet) "
+        "VALUES (new.id, COALESCE(new.full_name, ''), COALESCE(new.headline, ''), "
+        "COALESCE(new.current_company, ''), COALESCE(new.location, ''), COALESCE(new.platform, ''), "
+        "COALESCE(new.snippet, '')); END"
+    )
+    conn.exec_driver_sql(
+        "CREATE TRIGGER IF NOT EXISTS discoveries_fts_delete AFTER DELETE ON discovered_profiles BEGIN "
+        "DELETE FROM discovery_search_fts WHERE discovered_profile_id = old.id; END"
+    )
+    conn.exec_driver_sql(
+        "CREATE TRIGGER IF NOT EXISTS discoveries_fts_update AFTER UPDATE ON discovered_profiles BEGIN "
+        "DELETE FROM discovery_search_fts WHERE discovered_profile_id = old.id; "
+        "INSERT INTO discovery_search_fts(discovered_profile_id, full_name, headline, current_company, location, platform, snippet) "
+        "VALUES (new.id, COALESCE(new.full_name, ''), COALESCE(new.headline, ''), "
+        "COALESCE(new.current_company, ''), COALESCE(new.location, ''), COALESCE(new.platform, ''), "
+        "COALESCE(new.snippet, '')); END"
+    )
+
+    # Rebuild from canonical tables so pre-migration records are immediately searchable.
+    conn.exec_driver_sql("DELETE FROM candidate_search_fts")
+    conn.exec_driver_sql(
+        "INSERT INTO candidate_search_fts(candidate_id, full_name, current_title, current_company, location, email) "
+        "SELECT id, COALESCE(full_name, ''), COALESCE(current_title, ''), "
+        "COALESCE(current_company, ''), COALESCE(location, ''), COALESCE(email, '') FROM candidates"
+    )
+    conn.exec_driver_sql("DELETE FROM discovery_search_fts")
+    conn.exec_driver_sql(
+        "INSERT INTO discovery_search_fts(discovered_profile_id, full_name, headline, current_company, location, platform, snippet) "
+        "SELECT id, COALESCE(full_name, ''), COALESCE(headline, ''), COALESCE(current_company, ''), "
+        "COALESCE(location, ''), COALESCE(platform, ''), COALESCE(snippet, '') FROM discovered_profiles"
+    )
+
+
+def _communication_delivery_receipts(conn: Connection) -> None:
+    """Add durable external-delivery state without changing historical log rows."""
+    columns = _table_columns(conn, "communications")
+    if not columns:
+        return
+    additions = {
+        "provider_name": "VARCHAR(50)",
+        "provider_message_id": "VARCHAR(255)",
+        "failure_reason": "TEXT",
+        "retry_eligible": "BOOLEAN NOT NULL DEFAULT 0",
+        "delivery_key": "VARCHAR(64)",
+    }
+    for name, sql_type in additions.items():
+        if name not in columns:
+            conn.exec_driver_sql(f"ALTER TABLE communications ADD COLUMN {name} {sql_type}")
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_communications_delivery_key "
+        "ON communications(delivery_key)"
+    )
+
+
+def _report_artifacts(conn: Connection) -> None:
+    """Add durable metadata for files generated in the private report directory."""
+    conn.exec_driver_sql(
+        "CREATE TABLE IF NOT EXISTS report_artifacts ("
+        "id VARCHAR(32) PRIMARY KEY, "
+        "report_type VARCHAR(50) NOT NULL, "
+        "format VARCHAR(10) NOT NULL, "
+        "title VARCHAR(255) NOT NULL, "
+        "file_name VARCHAR(255) NOT NULL, "
+        "relative_path VARCHAR(255) NOT NULL, "
+        "media_type VARCHAR(120) NOT NULL, "
+        "size_bytes INTEGER NOT NULL, "
+        "sha256 VARCHAR(64) NOT NULL, "
+        "hunt_id INTEGER, "
+        "hunt_title VARCHAR(255), "
+        "days INTEGER NOT NULL DEFAULT 30, "
+        "actor_type VARCHAR(30) NOT NULL, "
+        "session_id VARCHAR(120), "
+        "provenance_json TEXT NOT NULL DEFAULT '{}', "
+        "created_at DATETIME NOT NULL"
+        ")"
+    )
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_report_artifacts_relative_path "
+        "ON report_artifacts(relative_path)"
+    )
+    for column in ("report_type", "format", "hunt_id", "session_id", "created_at"):
+        conn.exec_driver_sql(
+            f"CREATE INDEX IF NOT EXISTS ix_report_artifacts_{column} ON report_artifacts({column})"
         )
 
 
@@ -288,6 +431,9 @@ MIGRATIONS = (
     Migration(5, "action_resource_locks", _action_resource_locks),
     Migration(6, "action_tool_calls", _action_tool_calls),
     Migration(7, "background_jobs", _background_jobs),
+    Migration(8, "candidate_full_text_search", _candidate_full_text_search),
+    Migration(9, "communication_delivery_receipts", _communication_delivery_receipts),
+    Migration(10, "report_artifacts", _report_artifacts),
 )
 
 
@@ -310,9 +456,7 @@ def _applied_versions(engine: Engine) -> set[int]:
             return set()
         return {
             int(row[0])
-            for row in conn.exec_driver_sql(
-                "SELECT version FROM schema_migrations"
-            ).fetchall()
+            for row in conn.exec_driver_sql("SELECT version FROM schema_migrations").fetchall()
         }
 
 

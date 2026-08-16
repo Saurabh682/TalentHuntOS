@@ -3,15 +3,19 @@
 TalentHunt OS - Desktop Distribution Build Script (Phase 9)
 
 Automates the PyInstaller bundling process for TalentHunt OS.
-Bundles the NiceGUI web/desktop application and the local `llama-server.exe` AI binary
-into a single standalone desktop distribution directory.
+Bundles the NiceGUI desktop application and the complete pinned llama.cpp runtime
+into a standalone distribution directory. Model weights remain a verified first-run
+download so the installer stays manageable.
 
 Usage:
     python scripts/build_installer.py [options]
 
 Options:
     --clean             Clean previous build and dist directories before building.
-    --llama-path PATH   Explicit path to llama-server.exe binary.
+    --llama-runtime-dir PATH
+                        Explicit verified llama.cpp runtime directory.
+    --no-runtime-download
+                        Fail instead of downloading the pinned build runtime.
     --dist-dir PATH     Output directory for the distribution (default: dist).
     --console           Keep terminal console window visible for debugging (default: windowed).
     --no-auto-install   Do not auto-install PyInstaller if missing.
@@ -57,7 +61,7 @@ def check_and_install_pyinstaller(auto_install: bool = True) -> bool:
         import subprocess
 
         subprocess_cmd = [sys.executable, "-m", "pip", "install", "pyinstaller"]
-        result = subprocess.run(subprocess_cmd, check=True, capture_output=True, text=True)
+        subprocess.run(subprocess_cmd, check=True, capture_output=True, text=True)
         logger.info("Successfully installed PyInstaller.")
         return True
     except Exception as err:
@@ -78,44 +82,48 @@ def get_nicegui_dir() -> Path:
         sys.exit(1)
 
 
-def find_llama_server(explicit_path: Optional[str] = None) -> Optional[Path]:
-    """
-    Search for llama-server.exe across explicit path, project folders, system paths, and PATH.
-    """
-    binary_name = "llama-server.exe" if platform.system() == "Windows" else "llama-server"
+def prepare_build_runtime(
+    explicit_path: Optional[str] = None, *, allow_download: bool = True
+) -> Optional[Path]:
+    """Resolve or install only the complete runtime pinned by the app manifest."""
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
 
-    # 1. User specified path
+    from app.ai.embedded_runtime import (
+        prepare_runtime_directory,
+        runtime_directory_state,
+        source_runtime_dir,
+    )
+
     if explicit_path:
-        path = Path(explicit_path).resolve()
-        if path.exists() and path.is_file():
-            logger.info("Using user-specified llama-server binary: %s", path)
-            return path
-        logger.warning("Specified llama-server path does not exist: %s", explicit_path)
+        candidate = Path(explicit_path).resolve()
+        if candidate.is_file():
+            candidate = candidate.parent
+        state = runtime_directory_state(candidate, full_verify=True)
+        if not state["verified"]:
+            raise RuntimeError(
+                "The supplied llama.cpp directory is incomplete or does not match "
+                "TalentHunt's pinned runtime manifest."
+            )
+        logger.info("Using verified runtime directory: %s", candidate)
+        return candidate
 
-    # 2. Project local directories
-    candidate_paths = [
-        BASE_DIR / "bin" / binary_name,
-        BASE_DIR / "models" / binary_name,
-        BASE_DIR / binary_name,
-        Path("C:/llama.cpp") / binary_name,
-        Path("C:/tools") / binary_name,
-        Path("/usr/local/bin") / binary_name,
-    ]
+    target = source_runtime_dir()
+    if runtime_directory_state(target, full_verify=True)["verified"]:
+        logger.info("Using verified project runtime: %s", target)
+        return target
+    if not allow_download:
+        logger.error(
+            "The pinned llama.cpp runtime is absent. Re-run without "
+            "--no-runtime-download to fetch and verify it."
+        )
+        return None
 
-    for candidate in candidate_paths:
-        if candidate.exists() and candidate.is_file():
-            logger.info("Found llama-server binary at: %s", candidate)
-            return candidate
-
-    # 3. Search in system PATH
-    found_in_path = shutil.which("llama-server") or shutil.which("llama-server.exe")
-    if found_in_path:
-        path = Path(found_in_path).resolve()
-        logger.info("Found llama-server binary in PATH: %s", path)
-        return path
-
-    logger.warning("llama-server binary was not found in standard locations.")
-    return None
+    logger.info("Downloading and verifying the pinned llama.cpp build runtime...")
+    state = prepare_runtime_directory(target)
+    if not state["verified"]:
+        raise RuntimeError("The pinned llama.cpp build runtime failed verification.")
+    return target
 
 
 def clean_build_dirs(dist_dir: Path, build_dir: Path, spec_file: Path) -> None:
@@ -178,6 +186,8 @@ def get_hidden_imports() -> List[str]:
         "app.ui.pages",
         "app.ui.panels",
         "app.ai",
+        "app.ai.embedded_jobs",
+        "app.ai.embedded_runtime",
         "app.ai.engine",
         "app.ai.local_server",
         "app.ai.providers",
@@ -199,6 +209,7 @@ def get_hidden_imports() -> List[str]:
         "app.voice.audio_bridge",
         "app.agents",
         "app.actions",
+        "app.actions.ai_runtime",
         "app.infrastructure",
         "app.intelligence",
         # Config & Utils
@@ -206,6 +217,7 @@ def get_hidden_imports() -> List[str]:
         "pydantic_settings",
         "keyring",
         "cryptography",
+        "psutil",
     ]
 
 
@@ -213,7 +225,7 @@ def build_pyinstaller_args(
     dist_dir: Path,
     build_dir: Path,
     nicegui_dir: Path,
-    llama_path: Optional[Path],
+    runtime_dir: Optional[Path],
     console: bool = False,
 ) -> List[str]:
     """Construct argument list for PyInstaller invocation."""
@@ -247,9 +259,9 @@ def build_pyinstaller_args(
     if alembic_ini.exists():
         args.append(f"--add-data={alembic_ini}{sep}.")
 
-    # Add llama-server.exe binary if located
-    if llama_path:
-        args.append(f"--add-binary={llama_path}{sep}.")
+    # The complete verified runtime is copied beside the built executable later.
+    # Adding only llama-server.exe would omit its required llama/ggml DLLs.
+    _ = runtime_dir
 
     # Add all hidden imports
     for item in get_hidden_imports():
@@ -275,9 +287,8 @@ def create_windows_launcher(dist_app_dir: Path) -> None:
             logger.warning("Failed to create launcher batch file: %s", exc)
 
 
-def create_readme(dist_app_dir: Path, has_llama: bool) -> None:
+def create_readme(dist_app_dir: Path, has_runtime: bool) -> None:
     """Create README_DIST.txt inside distribution directory."""
-    binary_name = "llama-server.exe" if platform.system() == "Windows" else "llama-server"
     content = f"""========================================================================
 TalentHunt OS - Desktop Distribution
 ========================================================================
@@ -290,14 +301,17 @@ How to Run:
 1. Double-click `TalentHuntOS.exe` (or run `run_talenthunt.bat`).
 2. TalentHunt OS will launch and open the web dashboard in your browser.
 
-Local AI Engine (llama-server):
+Embedded Local Copilot:
 ------------------------------------------------------------------------
-{"[INSTALLED] `llama-server.exe` is bundled with this distribution." if has_llama else f"[MISSING] `{binary_name}` was not bundled automatically. Place `{binary_name}` in this directory for offline AI functionality."}
+{"[INSTALLED] The complete pinned llama.cpp runtime is bundled and verified." if has_runtime else "[MISSING] The verified llama.cpp runtime was not bundled; rebuild the distribution."}
+The IBM Granite 4.1 3B Q4_K_M model is not embedded in the installer.
+Open Settings and select Install once to download and verify about 2.1 GB.
+After that first download, the embedded Copilot can run fully offline.
 
 Directory Contents:
 ------------------------------------------------------------------------
 - `TalentHuntOS.exe` : Main Application Executable
-- `llama-server.exe`  : Local LLM Inference Engine (if bundled)
+- `llama-runtime/`    : Verified local LLM inference engine and required DLLs
 - `_internal/`        : Python runtime and compiled library dependencies
 - `run_talenthunt.bat`: Windows quick launcher script
 
@@ -332,10 +346,17 @@ def main() -> None:
         help="Clean build and dist directories before starting build",
     )
     parser.add_argument(
+        "--llama-runtime-dir",
         "--llama-path",
+        dest="llama_runtime_dir",
         type=str,
         default=None,
-        help="Explicit path to llama-server.exe binary",
+        help="Explicit verified runtime directory (--llama-path remains an alias)",
+    )
+    parser.add_argument(
+        "--no-runtime-download",
+        action="store_true",
+        help="Fail instead of downloading the pinned llama.cpp build runtime",
     )
     parser.add_argument(
         "--dist-dir",
@@ -366,7 +387,16 @@ def main() -> None:
 
     # 2. Locate components
     nicegui_dir = get_nicegui_dir()
-    llama_path = find_llama_server(args.llama_path)
+    try:
+        runtime_dir = prepare_build_runtime(
+            args.llama_runtime_dir,
+            allow_download=not args.no_runtime_download,
+        )
+    except Exception as exc:
+        logger.error("Unable to prepare the embedded AI runtime: %s", exc)
+        sys.exit(1)
+    if runtime_dir is None:
+        sys.exit(1)
 
     # 3. Setup paths
     dist_root = Path(args.dist_dir).resolve() if Path(args.dist_dir).is_absolute() else (BASE_DIR / args.dist_dir).resolve()
@@ -382,7 +412,7 @@ def main() -> None:
         dist_dir=dist_app_dir,
         build_dir=build_dir,
         nicegui_dir=nicegui_dir,
-        llama_path=llama_path,
+        runtime_dir=runtime_dir,
         console=args.console,
     )
 
@@ -400,29 +430,24 @@ def main() -> None:
         logger.error("PyInstaller build failed: %s", exc)
         sys.exit(1)
 
-    # 6. Post-build handling: Ensure llama-server is in dist_app_dir
-    binary_name = "llama-server.exe" if platform.system() == "Windows" else "llama-server"
-    dist_llama_target = dist_app_dir / binary_name
+    # 6. Copy and re-verify the complete runtime beside the executable.
+    dist_runtime_dir = dist_app_dir / "llama-runtime"
+    try:
+        if dist_runtime_dir.exists():
+            shutil.rmtree(dist_runtime_dir)
+        shutil.copytree(runtime_dir, dist_runtime_dir)
+        from app.ai.embedded_runtime import runtime_directory_state
 
-    if llama_path and llama_path.exists():
-        if not dist_llama_target.exists():
-            logger.info("Copying %s to distribution directory: %s", binary_name, dist_llama_target)
-            try:
-                shutil.copy2(llama_path, dist_llama_target)
-            except Exception as exc:
-                logger.warning("Failed to copy llama-server to dist directory: %s", exc)
-        else:
-            logger.info("Verified %s in distribution directory.", binary_name)
-    else:
-        logger.warning(
-            "Note: %s was not bundled. Add it to %s manually.",
-            binary_name,
-            dist_app_dir,
-        )
+        if not runtime_directory_state(dist_runtime_dir, full_verify=True)["verified"]:
+            raise RuntimeError("Copied runtime failed final distribution verification.")
+        logger.info("Bundled verified llama.cpp runtime: %s", dist_runtime_dir)
+    except Exception as exc:
+        logger.error("Failed to bundle the complete llama.cpp runtime: %s", exc)
+        sys.exit(1)
 
     # 7. Post-build assets
     create_windows_launcher(dist_app_dir)
-    create_readme(dist_app_dir, has_llama=(llama_path is not None and llama_path.exists()))
+    create_readme(dist_app_dir, has_runtime=True)
 
     # 8. Report results
     size_mb = calculate_dir_size_mb(dist_app_dir)

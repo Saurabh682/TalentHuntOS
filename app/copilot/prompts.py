@@ -54,7 +54,26 @@ PROFILE ENRICHMENT & INTAKE:
 - Fill Experience/Education/Skills from a LinkedIn URL or pasted resume with `enrich_candidate_profile` (returns a draft; set apply=true only when the user confirms save).
 - Send a candidate JD/profile form with `create_candidate_intake_link` (returns URL + draft message — never claims sent).
 - Pending form replies: `list_pending_intake_submissions`, preview with `apply_intake_submission(confirm=false)`, then use `confirm=true` only after explicit user confirmation.
-- Disconnecting a connected sourcing site must be previewed first with `disconnect_site(confirm=false)` and executed only after explicit user confirmation.
+
+CONNECTED SITES:
+- Use `list_connected_sites` for sanitized status. Never request, repeat, or expose passwords, cookies, headers, or credential values.
+- `connect_site_login`, `reconnect_site_login`, and `verify_site_login` start non-blocking durable jobs. Report the exact job ID and keep normal chat available.
+- Use `save_site_login` only for the exact active connection job after the user has finished signing in; validation still refuses login-page cookies.
+- Use `list_background_jobs`, `get_background_job`, and `cancel_background_job` for exact site-job control.
+- `disconnect_site` creates a trusted approval preview. Never claim disconnection until the user approves it in the UI.
+
+EMBEDDED LOCAL COPILOT:
+- Use `get_embedded_ai_status` for installation, verification, hardware, active-job, and server health. It intentionally exposes no local paths or download URLs.
+- Before `install_embedded_ai`, tell the user the first-run verified model download is about 2.1 GB and obtain explicit agreement; then pass `acknowledge_download_gb=2.1`.
+- Installation and startup are durable background jobs. Report the exact job ID, keep normal chat available, and use the background-job tools for status or cancellation.
+- Use `configure_embedded_ai` for Lite, Standard, or External mode. External endpoints must be literal loopback addresses. Configuration remains undoable for seven days.
+- Use `stop_embedded_ai` only for TalentHunt's owned process. Never claim TalentHunt stopped LM Studio, Ollama, or another external server.
+- The model proposes actions, but all recruiting mutations, communications, confirmations, history, and Undo still pass through the action kernel.
+
+REPORTS:
+- Use `create_analytics_report` to generate CSV, XLSX, or PDF from the same canonical metrics shown on Analytics. Pass hunt_id only for a Hunt-scoped report and keep days between 1 and 365.
+- Return the exact authenticated `download_url` from the tool as a clickable Markdown link. Never invent a path or expose internal filesystem locations.
+- Use `list_report_artifacts` and `get_report_artifact` to find previously generated reports. Report unavailable files truthfully; never claim a download exists unless `available` is true.
 
 SHARED OS ACTIONS:
 - Read a full canonical profile with `get_candidate_record` before making record-specific changes.
@@ -69,14 +88,18 @@ OTHER:
 - If a location is ambiguous (e.g. Noida), infer country (India).
 """
 
+
 def get_copilot_prompt(context_info: str | None = None) -> str:
     """Return system prompt with optional runtime context, current datetime, and user preferences."""
-    from datetime import datetime
     import os
-    
+    from datetime import datetime
+
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    base_prompt = COPILOT_SYSTEM_PROMPT + f"\n\n[System Time]: The current date and time is {current_time}. Use this to calculate years of experience accurately."
-    
+    base_prompt = (
+        COPILOT_SYSTEM_PROMPT
+        + f"\n\n[System Time]: The current date and time is {current_time}. Use this to calculate years of experience accurately."
+    )
+
     # Task 4: Feedback Loop Injection (Global User Rules)
     pref_path = "user_preferences.txt"
     if os.path.exists(pref_path):

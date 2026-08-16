@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.actions.models import ActionExecution, ActionToolCall
 from app.candidates.models import Candidate
+from app.communications.models import Communication, EmailAccount
 from app.copilot.session_ctx import set_active_session_id
 from app.copilot.tools import get_copilot_tools
 from app.hunts.models import TalentHunt
@@ -52,6 +53,7 @@ def test_registry_generates_unique_typed_copilot_tools():
         "list_discovery_records": "discoveries.list",
         "get_discovery_record": "discoveries.get",
         "list_common_pool": "discoveries.common_pool.list",
+        "archive_discoveries_common_pool": "discoveries.common_pool.archive",
         "approve_discovery": "discoveries.approve",
         "reject_discovery": "discoveries.reject",
         "get_pipeline_board": "pipeline.get",
@@ -66,8 +68,48 @@ def test_registry_generates_unique_typed_copilot_tools():
         "update_hunt_record": "hunts.update",
         "set_hunt_lifecycle_status": "hunts.status.set",
         "archive_hunt_by_id": "hunts.archive",
+        "get_recruiting_kpis": "analytics.kpi",
+        "get_recruiting_funnel": "analytics.funnel",
+        "get_time_to_fill_analytics": "analytics.time_to_fill",
+        "get_sourcing_quality_analytics": "analytics.sourcing_quality",
+        "get_outreach_analytics": "analytics.outreach",
+        "get_ai_usage_costs": "analytics.ai_cost",
+        "get_recruiting_trends": "analytics.trends",
+        "create_analytics_report": "reports.analytics.create",
+        "list_report_artifacts": "reports.list",
+        "get_report_artifact": "reports.get",
+        "list_communication_logs": "communications.logs.list",
+        "record_communication_log": "communications.logs.create",
+        "set_communication_log_status": "communications.logs.status.set",
+        "list_message_templates": "communications.templates.list",
+        "create_message_template": "communications.templates.create",
+        "update_message_template": "communications.templates.update",
+        "set_message_template_active": "communications.templates.active.set",
+        "list_outreach_sequences": "communications.sequences.list",
+        "create_outreach_sequence": "communications.sequences.create",
+        "update_outreach_sequence": "communications.sequences.update",
+        "set_outreach_sequence_active": "communications.sequences.active.set",
+        "add_outreach_sequence_step": "communications.sequence_steps.add",
+        "enroll_candidate_in_outreach": "communications.enrollments.create",
+        "set_outreach_enrollment_status": "communications.enrollments.status.set",
+        "list_due_outreach_deliveries": "communications.deliveries.due.list",
+        "send_approved_email": "communications.delivery.send",
         "undo_recent_action": "actions.undo",
+        "list_background_jobs": "jobs.list",
+        "get_background_job": "jobs.get",
+        "cancel_background_job": "jobs.cancel",
         "retry_background_job": "jobs.retry",
+        "list_connected_sites": "sites.list",
+        "connect_site_login": "sites.connect",
+        "reconnect_site_login": "sites.reconnect",
+        "verify_site_login": "sites.verify",
+        "save_site_login": "sites.connect.save",
+        "disconnect_site": "sites.disconnect",
+        "get_embedded_ai_status": "ai.runtime.status",
+        "install_embedded_ai": "ai.runtime.install",
+        "start_embedded_ai": "ai.runtime.start",
+        "stop_embedded_ai": "ai.runtime.stop",
+        "configure_embedded_ai": "ai.runtime.configure",
     }
     for tool_name, action_name in expected.items():
         assert tools[tool_name].metadata["generated_action"] is True
@@ -156,4 +198,57 @@ def test_generated_r3_tool_only_creates_trusted_preview(monkeypatch, tmp_path):
         call = db.query(ActionToolCall).one()
         assert call.status == "completed"
         assert call.action_name == "hunts.archive"
+
+
+def test_generated_r4_email_tool_only_creates_preview(monkeypatch, tmp_path):
+    factory = _factory(tmp_path)
+    _use_factory(monkeypatch, factory)
+    with factory() as db:
+        db.add(User(username="admin", role="admin", is_active=True))
+        db.add(
+            EmailAccount(
+                email_address="recruiter@example.test",
+                smtp_host="127.0.0.1",
+                smtp_port=1025,
+                use_ssl=False,
+                is_default=True,
+                is_active=True,
+            )
+        )
+        candidate = Candidate(
+            full_name="Preview Candidate",
+            email="preview@example.test",
+            status="Active",
+        )
+        db.add(candidate)
+        db.commit()
+        candidate_id = candidate.id
+
+    monkeypatch.setattr(
+        "app.communications.email_service.send_email",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("Generated R4 tool invoked SMTP without UI approval.")
+        ),
+    )
+    set_active_session_id("communications-r4-preview")
+    try:
+        payload = json.loads(
+            _tool("send_approved_email").invoke(
+                {
+                    "candidate_id": candidate_id,
+                    "subject": "Reviewed subject",
+                    "body": "Reviewed body",
+                }
+            )
+        )
+    finally:
+        set_active_session_id(None)
+    assert payload["status"] == "success"
+    assert payload["data"]["status"] == "pending"
+    assert payload["data"]["preview"]["risk_level"] == "R4"
+    assert "token" not in payload["data"]
+    with factory() as db:
+        assert db.query(Communication).count() == 0
+        call = db.query(ActionToolCall).one()
+        assert call.action_name == "communications.delivery.send"
         assert call.action_execution_id is None

@@ -21,9 +21,6 @@ dependencies = [
     "pydantic-ai>=0.1",
     "routellm",
     
-    # Local AI
-    "llama-cpp-python>=0.3",
-    
     # Voice
     "pipecat-ai>=0.1",
     "deepgram-sdk>=3.0",
@@ -47,6 +44,7 @@ dependencies = [
     # Document Processing
     "pypdf>=4.0",
     "python-docx>=1.0",
+    "openpyxl>=3.1,<4",
     "rapidocr-onnxruntime",
     "reportlab>=4.1",
     
@@ -54,6 +52,7 @@ dependencies = [
     "rapidfuzz>=3.6",
     "aiosmtplib>=3.0",
     "plotly>=5.0",
+    "psutil>=7,<8",
 ]
 
 [build-system]
@@ -63,12 +62,67 @@ build-backend = "setuptools.build_meta"
 [project.scripts]
 talenthunt-reset-password = "app.infrastructure.password_recovery:main"
 
+[dependency-groups]
+dev = [
+    "bandit>=1.8,<2",
+    "deptry>=0.23,<1",
+    "faker>=37,<38",
+    "hypothesis>=6.138,<7",
+    "pip-audit>=2.9,<3",
+    "pre-commit>=4.3,<5",
+    "pytest>=9.0.3,<10",
+    "pytest-cov>=6.2,<7",
+    "pyyaml>=6,<7",
+    "ruff>=0.12,<1",
+    "vulture>=2.14,<3",
+]
+
 [tool.setuptools.packages.find]
 where = ['.']
 include = ['app*']
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["scratch", "output", "graphify-out", ".git"]
+norecursedirs = ["scratch", "output", "graphify-out", ".git", ".hypothesis"]
 cache_dir = "output/.pytest_cache"
 addopts = "--basetemp=output/pytest-temp"
+markers = [
+    "accessibility: requires a running loopback app and local axe-core package",
+    "mailpit: requires a loopback Mailpit development server",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["build", "dist", "graphify-out", "models", "output", "scratch"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/main.py" = ["E402"]
+"tests/*" = ["F841"]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = ["app/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.bandit]
+exclude_dirs = ["build", "dist", "graphify-out", "models", "output", "scratch", "tests"]
+skips = ["B101"]
+
+[tool.vulture]
+exclude = ["build/", "dist/", "graphify-out/", "output/", "scratch/"]
+min_confidence = 90
+
+[tool.deptry]
+extend_exclude = ["build", "dist", "graphify-out", "models", "output", "scratch"]

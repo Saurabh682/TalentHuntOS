@@ -1,0 +1,13 @@
+title = "TalentHunt OS local secret scan"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated, cached, model, and runtime output is not source input"
+paths = [
+  '''^graphify-out/''',
+  '''^models/''',
+  '''^output/''',
+  '''^scratch/''',
+]

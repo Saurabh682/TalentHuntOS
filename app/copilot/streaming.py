@@ -52,6 +52,26 @@ PRO_TIPS = [
 ]
 
 
+def _friendly_ai_failure(exc: Exception, provider: str | None = None) -> str:
+    """Return a precise, non-secret failure without leaking provider internals."""
+    from app.ai.engine import LocalAIUnavailableError
+
+    if isinstance(exc, LocalAIUnavailableError):
+        return str(exc)
+    requested = (provider or ai_engine.default_provider or "local").lower()
+    if requested in {"local", "lmstudio", "llama_cpp"}:
+        try:
+            readiness = ai_engine.local_readiness_message()
+            if readiness:
+                return readiness
+        except Exception:
+            pass
+    return (
+        "Copilot could not reach the selected AI provider. Check its connection in "
+        "Settings and try again. Your command was not executed."
+    )
+
+
 def _looks_like_repetition_loop(text: str) -> bool:
     """Detect stuck token loops that balloon response size and drop the UI socket."""
     if len(text) < REPEAT_WINDOW * 2:
@@ -69,8 +89,8 @@ def _build_active_hunt_context(session_id: str) -> str:
         if not hunt_id_str.isdigit():
             return ""
         hunt_id = int(hunt_id_str)
-        from app.infrastructure.db import SessionFactory
         from app.hunts.service import get_hunt
+        from app.infrastructure.db import SessionFactory
 
         with SessionFactory() as db:
             hunt = get_hunt(db, hunt_id)
@@ -140,6 +160,7 @@ def _run_agent_worker(
         accumulated = ""
         try:
             from langgraph.prebuilt import create_react_agent
+
             from app.copilot.tools import get_copilot_tools
 
             llm = ai_engine.get_llm(provider=provider, model=model)
@@ -184,10 +205,7 @@ def _run_agent_worker(
                     out_q.put(accumulated)
         except Exception as exc:
             logger.exception("Copilot agent worker failed")
-            msg = (
-                f"I encountered an issue with the AI engine ({exc}). "
-                "Please verify your API key in Settings or check your local server configuration."
-            )
+            msg = _friendly_ai_failure(exc, provider)
             accumulated = (accumulated + "\n\n" if accumulated else "") + msg
             out_q.put(accumulated)
         finally:
@@ -197,7 +215,7 @@ def _run_agent_worker(
         asyncio.run(_consume())
     except Exception as exc:
         logger.exception("Copilot worker loop crashed: %s", exc)
-        out_q.put(f"Copilot worker crashed: {exc}")
+        out_q.put(_friendly_ai_failure(exc, provider))
         out_q.put(None)
     finally:
         set_active_session_id(None)
@@ -261,10 +279,7 @@ async def stream_copilot_response(
             yield accumulated
 
     except Exception as exc:
-        fallback_msg = (
-            f"I encountered an issue with the AI engine ({exc}). "
-            "Please verify your API key in Settings or check your local server configuration."
-        )
+        fallback_msg = _friendly_ai_failure(exc, provider)
         accumulated += ("\n\n" if accumulated else "") + fallback_msg
         yield accumulated
 

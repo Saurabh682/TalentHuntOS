@@ -17,6 +17,9 @@ def open_profile_sections_review(
     title: str = "Review extracted profile",
     default_mode: str = "merge",
     on_applied: Optional[Callable[[], None]] = None,
+    action_name: str = "candidates.profile.apply",
+    action_extra: Optional[Dict[str, Any]] = None,
+    nested_payload_key: Optional[str] = None,
 ) -> None:
     """Show editable checklist of experiences / education / skills, then apply."""
     experiences: List[Dict[str, Any]] = list(draft.get("experiences") or [])
@@ -133,9 +136,7 @@ def open_profile_sections_review(
                     ui.notify("Nothing selected to apply.", type="warning")
                     return
                 mode = mode_sel.value if isinstance(mode_sel.value, str) else "merge"
-                result = dispatch_action(
-                    "candidates.profile.apply",
-                    {
+                profile_payload = {
                         "candidate_id": candidate_id,
                         "experiences": selected_exp or None,
                         "educations": selected_edu or None,
@@ -156,7 +157,20 @@ def open_profile_sections_review(
                         "resume_text": draft.get("resume_text"),
                         "experience_years": float(years) if years is not None else None,
                         "mode": mode,
-                    },
+                    }
+                if nested_payload_key:
+                    profile_payload.pop("candidate_id", None)
+                    profile_payload.pop("mode", None)
+                    action_payload = {
+                        **(action_extra or {}),
+                        "mode": mode,
+                        nested_payload_key: profile_payload,
+                    }
+                else:
+                    action_payload = {**profile_payload, **(action_extra or {})}
+                result = dispatch_action(
+                    action_name,
+                    action_payload,
                     actor_type="ui",
                     session_id=f"candidate_{candidate_id}",
                 )

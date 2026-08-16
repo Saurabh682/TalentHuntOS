@@ -2,6 +2,7 @@
 
 import logging
 from typing import Any, Generator
+
 from pydantic import BaseModel
 
 from app.config.settings import settings
@@ -19,11 +20,19 @@ PROVIDER_DEFAULT_MODELS = {
     "llama_cpp": "local-model",
 }
 
+
+class LocalAIUnavailableError(RuntimeError):
+    """Raised before provider retries when the selected local runtime is unavailable."""
+
+
 class AIEngine:
     """Unified interface for managing multi-provider LLM completions & streamings."""
 
     def __init__(self) -> None:
-        if settings.gemini_api_key:
+        if settings.enable_local_ai:
+            self.default_provider = "local"
+            self.default_model = PROVIDER_DEFAULT_MODELS["local"]
+        elif settings.gemini_api_key:
             self.default_provider = "gemini"
             self.default_model = PROVIDER_DEFAULT_MODELS["gemini"]
         elif settings.openai_api_key:
@@ -35,6 +44,58 @@ class AIEngine:
         else:
             self.default_provider = "local"
             self.default_model = "local-model"
+
+    @staticmethod
+    def _local_base_url(port: int | None = None) -> str:
+        from app.ai.embedded_runtime import configured_local_endpoint
+        from app.ai.local_server import _is_loopback_host
+
+        host, configured_port = configured_local_endpoint()
+        if not _is_loopback_host(host):
+            raise RuntimeError("Local AI providers must use a literal loopback host.")
+        return f"http://{host}:{int(port or configured_port)}/v1"
+
+    @staticmethod
+    def local_readiness_message() -> str | None:
+        """Return an actionable local-runtime problem, or None when it is ready."""
+        from app.ai.embedded_runtime import EMBEDDED_MODES, public_status
+
+        status = public_status()
+        mode = status["mode"]
+        server = status["server"]
+        if mode in EMBEDDED_MODES:
+            if not status["runtime"]["verified"] or not status["model"]["verified"]:
+                return (
+                    "Embedded Local Copilot is not installed yet. Open Settings > "
+                    "Embedded Local Copilot and select Install (about 2.1 GB). "
+                    "Your command was not executed. Deterministic OS commands remain available."
+                )
+            if server["status"] == "port_conflict":
+                return (
+                    f"Embedded Local Copilot cannot start because its loopback port "
+                    f"{server['port']} is in use. Close the conflicting service or change "
+                    "the embedded port configuration, then select Start in Settings."
+                )
+            if server["status"] != "running":
+                return (
+                    "Embedded Local Copilot is installed but is not running. Open Settings > "
+                    "Embedded Local Copilot and select Start. Your command was not executed."
+                )
+            return None
+        if server["status"] != "external":
+            endpoint = status["external_endpoint"]
+            return (
+                "No compatible external AI server is responding at "
+                f"{endpoint['host']}:{endpoint['port']}. Start or reconnect the loopback "
+                "server in Settings, or switch to Lite or Standard mode. "
+                "Your command was not executed."
+            )
+        return None
+
+    def _require_local_ready(self) -> None:
+        problem = self.local_readiness_message()
+        if problem:
+            raise LocalAIUnavailableError(problem)
 
     def get_llm(
         self,
@@ -50,6 +111,7 @@ class AIEngine:
         if requested_provider == "gemini" and settings.gemini_api_key:
             try:
                 from langchain_google_genai import ChatGoogleGenerativeAI
+
                 return ChatGoogleGenerativeAI(
                     model=model_name,
                     google_api_key=settings.gemini_api_key,
@@ -57,11 +119,14 @@ class AIEngine:
                     max_output_tokens=max_tokens,
                 )
             except Exception as exc:
-                logger.warning("Gemini provider unavailable (%s). Falling back to local LM Studio model.", exc)
+                logger.warning(
+                    "Gemini provider unavailable (%s). Falling back to local LM Studio model.", exc
+                )
 
         elif requested_provider == "openai" and settings.openai_api_key:
             try:
                 from langchain_openai import ChatOpenAI
+
                 return ChatOpenAI(
                     model=model_name,
                     api_key=settings.openai_api_key,
@@ -69,11 +134,14 @@ class AIEngine:
                     max_tokens=max_tokens,
                 )
             except Exception as exc:
-                logger.warning("OpenAI provider unavailable (%s). Falling back to local LM Studio model.", exc)
+                logger.warning(
+                    "OpenAI provider unavailable (%s). Falling back to local LM Studio model.", exc
+                )
 
         elif requested_provider == "anthropic" and settings.anthropic_api_key:
             try:
                 from langchain_anthropic import ChatAnthropic
+
                 return ChatAnthropic(
                     model=model_name,
                     api_key=settings.anthropic_api_key,
@@ -81,12 +149,16 @@ class AIEngine:
                     max_tokens=max_tokens,
                 )
             except Exception as exc:
-                logger.warning("Anthropic provider unavailable (%s). Falling back to local LM Studio model.", exc)
+                logger.warning(
+                    "Anthropic provider unavailable (%s). Falling back to local LM Studio model.",
+                    exc,
+                )
 
         elif requested_provider == "ollama":
             base_url = "http://127.0.0.1:11434/v1"
             try:
                 from langchain_openai import ChatOpenAI
+
                 return ChatOpenAI(
                     base_url=base_url,
                     api_key=settings.openai_api_key or "ollama",
@@ -98,9 +170,11 @@ class AIEngine:
                 logger.warning("Ollama provider failed (%s). Falling back to local LM Studio.", exc)
 
         elif requested_provider == "llama_cpp":
-            base_url = f"http://{settings.llama_server_host}:{settings.llama_server_port}/v1"
+            self._require_local_ready()
+            base_url = self._local_base_url()
             try:
                 from langchain_openai import ChatOpenAI
+
                 return ChatOpenAI(
                     base_url=base_url,
                     api_key=settings.openai_api_key or "llama-cpp",
@@ -109,13 +183,17 @@ class AIEngine:
                     max_tokens=max_tokens,
                 )
             except Exception as exc:
-                logger.warning("llama_cpp provider failed (%s). Falling back to local LM Studio.", exc)
+                logger.warning(
+                    "llama_cpp provider failed (%s). Falling back to local LM Studio.", exc
+                )
 
-        # Primary Local LM Studio Handler & Fallback
-        base_url = f"http://{settings.llama_server_host}:{settings.llama_server_port}/v1"
-        local_key = settings.openai_api_key or "lmstudio"
+        # Embedded llama-server and optional external OpenAI-compatible local providers.
+        self._require_local_ready()
+        base_url = self._local_base_url()
+        local_key = "talenthunt-local"
         try:
             from langchain_openai import ChatOpenAI
+
             return ChatOpenAI(
                 base_url=base_url,
                 api_key=local_key,
@@ -124,7 +202,9 @@ class AIEngine:
                 max_tokens=max_tokens,
             )
         except ImportError:
-            raise RuntimeError("langchain-openai package is required for local model compatibility. Run: pip install langchain-openai")
+            raise RuntimeError(
+                "langchain-openai package is required for local model compatibility. Run: pip install langchain-openai"
+            )
 
     def generate_response(
         self,
@@ -139,23 +219,29 @@ class AIEngine:
         messages = []
         if system_prompt:
             from langchain_core.messages import SystemMessage
+
             messages.append(SystemMessage(content=system_prompt))
         from langchain_core.messages import HumanMessage
+
         messages.append(HumanMessage(content=prompt))
 
         import time
+
         start_time = time.time()
-        
+
         try:
             response = llm.invoke(messages)
             latency = (time.time() - start_time) * 1000
-            
+
             # Observability telemetry
             import logging
+
             t_logger = logging.getLogger("talenthunt.ai.telemetry")
             t_logger.setLevel(logging.INFO)
-            t_logger.info(f"LLM Invoke | Model: {llm.model_name if hasattr(llm, 'model_name') else model} | Latency: {latency:.2f}ms")
-            
+            t_logger.info(
+                f"LLM Invoke | Model: {llm.model_name if hasattr(llm, 'model_name') else model} | Latency: {latency:.2f}ms"
+            )
+
             return str(response.content)
         except Exception as e:
             logger.error(f"LLM Invoke failed: {e}")
@@ -174,24 +260,30 @@ class AIEngine:
         messages = []
         if system_prompt:
             from langchain_core.messages import SystemMessage
+
             messages.append(SystemMessage(content=system_prompt))
         from langchain_core.messages import HumanMessage
+
         messages.append(HumanMessage(content=prompt))
 
         import time
+
         start_time = time.time()
         first_token = True
-        
+
         try:
             for chunk in llm.stream(messages):
                 if first_token:
                     latency = (time.time() - start_time) * 1000
                     import logging
+
                     t_logger = logging.getLogger("talenthunt.ai.telemetry")
                     t_logger.setLevel(logging.INFO)
-                    t_logger.info(f"LLM Stream Start | Model: {llm.model_name if hasattr(llm, 'model_name') else model} | Time to First Token: {latency:.2f}ms")
+                    t_logger.info(
+                        f"LLM Stream Start | Model: {llm.model_name if hasattr(llm, 'model_name') else model} | Time to First Token: {latency:.2f}ms"
+                    )
                     first_token = False
-                    
+
                 if hasattr(chunk, "content") and chunk.content:
                     yield str(chunk.content)
         except Exception as e:
@@ -211,8 +303,10 @@ class AIEngine:
         messages = []
         if system_prompt:
             from langchain_core.messages import SystemMessage
+
             messages.append(SystemMessage(content=system_prompt))
         from langchain_core.messages import HumanMessage
+
         messages.append(HumanMessage(content=prompt))
 
         try:
@@ -220,6 +314,7 @@ class AIEngine:
             return structured_llm.invoke(messages)
         except Exception as exc:
             import json
+
             logger.warning(
                 "Structured output not supported natively by provider/model (%s): %s. Falling back to JSON parsing.",
                 provider,
@@ -235,6 +330,7 @@ class AIEngine:
                 sys_instruct = f"{system_prompt}\n\n{sys_instruct}"
 
             from langchain_core.messages import SystemMessage
+
             fallback_messages = [
                 SystemMessage(content=sys_instruct),
                 HumanMessage(content=prompt),

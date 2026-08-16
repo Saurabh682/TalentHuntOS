@@ -31,11 +31,7 @@ DEFAULT_EXPIRY_DAYS = 14
 def _public_base_url() -> str:
     from app.config.settings import settings
 
-    host = settings.host or "127.0.0.1"
-    # Bind address 0.0.0.0 is not a usable browser host
-    if host in {"0.0.0.0", "::"}:
-        host = "127.0.0.1"
-    return f"http://{host}:{settings.port}"
+    return f"http://127.0.0.1:{settings.port}"
 
 
 def intake_url_for_token(token: str) -> str:
@@ -49,6 +45,7 @@ def create_intake_request(
     *,
     expires_in_days: int = DEFAULT_EXPIRY_DAYS,
     mark_sent: bool = True,
+    commit: bool = True,
 ) -> Optional[CandidateIntakeRequest]:
     """Create a tokenized intake request for a candidate (optionally tied to a hunt JD)."""
     candidate = get_candidate(db, candidate_id)
@@ -65,7 +62,10 @@ def create_intake_request(
         expires_at=expires_at,
     )
     db.add(req)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     db.refresh(req)
     return req
 
@@ -251,6 +251,9 @@ def apply_intake_submission(
     *,
     mode: str = "merge",
     accept: bool = True,
+    profile_payload: Optional[Dict[str, Any]] = None,
+    actor_type: str = "ui",
+    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Accept (merge into profile) or reject a pending intake submission."""
     sub = db.get(CandidateIntakeSubmission, submission_id)
@@ -263,21 +266,56 @@ def apply_intake_submission(
     if not req:
         return {"status": "error", "message": "Intake request missing."}
 
+    previous_request_status = req.status
+    previous_review_status = sub.review_status
+    previous_reviewed_at = sub.reviewed_at.isoformat() if sub.reviewed_at else None
+
     if not accept:
         sub.review_status = "rejected"
         sub.reviewed_at = datetime.now(timezone.utc)
         req.status = "rejected"
-        db.commit()
-        return {"status": "success", "action": "rejected", "submission_id": submission_id}
+        from app.actions.history import record_action
+
+        history = record_action(
+            db,
+            action_type="review_intake_submission",
+            summary=f"Rejected candidate intake submission #{submission_id}",
+            actor_type=actor_type,
+            session_id=session_id,
+            payload={
+                "submission_id": submission_id,
+                "request_id": req.id,
+                "candidate_id": req.candidate_id,
+                "decision": "reject",
+            },
+            undo_payload={
+                "request_id": req.id,
+                "submission_id": sub.id,
+                "request_status": previous_request_status,
+                "review_status": previous_review_status,
+                "reviewed_at": previous_reviewed_at,
+            },
+        )
+        return {
+            "status": "success", "action": "rejected", "submission_id": submission_id,
+            "candidate_id": req.candidate_id, "action_id": history.id,
+            "undoable": True, "undo_window_days": 7,
+        }
 
     try:
         payload = json.loads(sub.payload_json)
     except json.JSONDecodeError:
         return {"status": "error", "message": "Invalid submission payload."}
 
-    experiences = payload.get("experiences") or []
-    educations = payload.get("educations") or []
-    skills = payload.get("skills") or []
+    reviewed = dict(payload)
+    if profile_payload is not None:
+        for key in ("experiences", "educations", "skills", "summary", "experience_years"):
+            if key in profile_payload:
+                reviewed[key] = profile_payload[key]
+
+    experiences = reviewed.get("experiences") or []
+    educations = reviewed.get("educations") or []
+    skills = reviewed.get("skills") or []
     if isinstance(skills, str):
         skills = [s.strip() for s in skills.split(",") if s.strip()]
 
@@ -286,10 +324,6 @@ def apply_intake_submission(
     if not candidate_before:
         return {"status": "error", "message": "Candidate not found."}
     before_state = serialize_candidate_profile_state(candidate_before)
-    previous_request_status = req.status
-    previous_review_status = sub.review_status
-    previous_reviewed_at = sub.reviewed_at.isoformat() if sub.reviewed_at else None
-
     update_kwargs: Dict[str, Any] = {}
     if contact.get("email"):
         update_kwargs["email"] = str(contact["email"]).strip()
@@ -309,8 +343,8 @@ def apply_intake_submission(
         experiences=experiences,
         educations=educations,
         skills=skills,
-        summary=payload.get("summary"),
-        experience_years=payload.get("experience_years"),
+        summary=reviewed.get("summary"),
+        experience_years=reviewed.get("experience_years"),
         mode=mode,
         record_history=False,
     )
@@ -345,11 +379,12 @@ def apply_intake_submission(
     req.status = "accepted"
     from app.actions.history import record_action
 
-    record_action(
+    history = record_action(
         db,
         action_type="apply_intake_submission",
         summary=f"Applied candidate intake submission for {cand.full_name}",
-        actor_type="ui",
+        actor_type=actor_type,
+        session_id=session_id,
         payload={
             "submission_id": submission_id,
             "candidate_id": req.candidate_id,
@@ -372,4 +407,7 @@ def apply_intake_submission(
         "submission_id": submission_id,
         "candidate_id": req.candidate_id,
         "mode": mode,
+        "action_id": history.id,
+        "undoable": True,
+        "undo_window_days": 7,
     }

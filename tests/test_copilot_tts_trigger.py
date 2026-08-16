@@ -21,6 +21,6 @@ def test_copilot_tts_has_a_bounded_latency_fallback():
 
 
 def test_copilot_composer_uses_a_multiline_writing_surface():
-    assert "ui.textarea(placeholder='Ask Copilot…')" in PANEL_SOURCE
+    assert 'ui.textarea(placeholder="Ask Copilot…")' in PANEL_SOURCE
     assert "autogrow rows=2" in PANEL_SOURCE
     assert "th-copilot-composer-tool" in PANEL_SOURCE

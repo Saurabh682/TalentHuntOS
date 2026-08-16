@@ -1,17 +1,18 @@
 """Candidate DNA fingerprinting and similarity matching logic for TalentHunt OS."""
 
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
 import hashlib
 import json
 import logging
 import math
-from typing import List, Dict, Any, Optional, Tuple
-from sqlalchemy.orm import Session, selectinload
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, selectinload
 
-from app.candidates.models import Candidate, CandidateProfile, CandidateExperience
+from app.candidates.models import Candidate, CandidateExperience, CandidateProfile
 from app.candidates.search import candidate_search_index
 
 logger = logging.getLogger("talenthunt.intelligence.candidate_dna")
@@ -103,7 +104,7 @@ def _simple_text_embedding(text: str, dim: int = 64) -> List[float]:
         if not words:
             return vec
         for word in words:
-            h = int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16)
+            h = int(hashlib.md5(word.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
             idx = h % dim
             val = ((h >> 8) % 100) / 100.0 - 0.5
             vec[idx] += val
