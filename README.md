@@ -2,71 +2,59 @@
 
 # TalentHunt OS
 
-**A local-first, Copilot-first operating system for talent sourcing and recruiting.**
+**The local-first, Copilot-first operating system for talent sourcing and recruiting.**
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![NiceGUI](https://img.shields.io/badge/UI-NiceGUI-009688)](https://nicegui.io/)
 [![Status](https://img.shields.io/badge/status-active_development-F2B134)](#project-status)
+[![Local-first](https://img.shields.io/badge/data-local--first-19D3C5)](#data-and-privacy)
+[![Copilot actions](https://img.shields.io/badge/Copilot-guarded_actions-19D3C5)](#the-control-model)
 
-![TalentHunt OS dashboard](docs/images/dashboard.png)
+[Quick start](#quick-start) · [Recruiting workflow](#recruiting-workflow) · [Local Copilot](#embedded-local-copilot) · [Architecture](#architecture) · [Quality](#testing) · [Docs](#documentation)
 
 </div>
 
 TalentHunt OS brings sourcing, candidate records, Hunt pipelines, communications,
-analytics, and recruiting operations into one private workspace. Its Copilot is an
-operating surface over the same typed actions used by the UI, with approvals for risky
-changes, durable execution records, and seven-day Undo for supported local mutations.
+analytics, and recruiting operations into one private workspace. Its Copilot is not a
+second system bolted onto the UI: it requests the same typed actions, approvals, history,
+and Undo paths used by the product itself.
 
 > [!IMPORTANT]
 > TalentHunt OS is under active development. Core recruiting workflows are usable, but
 > full Copilot parity, communications automation, and release hardening are not complete.
 > Review the [Copilot-first roadmap](docs/COPILOT_FIRST_ROADMAP.md) before production use.
 
-## What It Does
+## Recruiting Workflow
 
-- **Talent Hunts** organize a role, location, experience target, skills, search sources,
-  and a configurable Kanban pipeline.
-- **Asynchronous sourcing** searches LinkedIn, Naukri, GitHub, Behance, ArtStation, and
-  Dribbble result surfaces in parallel, with durable progress, cancellation, retry, and
-  restart reconciliation.
-- **Discoveries and Common Pool** retain every useful identity found during sourcing,
-  including filtered and rejected results, without inflating active Candidate counts.
-- **Canonical Candidates** are the single source of truth for Dashboard, Candidate,
-  Hunt, and Pipeline views.
-- **Structured profiles** store experience, education, skills, notes, source provenance,
-  resume imports, and profile evidence. Experience totals are calculated from timeline
-  intervals instead of summing overlapping jobs.
-- **Candidate Intake** creates tokenized forms and applies reviewed submissions to the
-  canonical profile.
-- **Recruiting Copilot** can query records and execute registered OS actions while normal
-  chat remains available during background sourcing.
-- **Action History** records typed mutations and provides exact seven-day Undo where a
-  local operation is genuinely reversible.
-- **Analytics reports** create canonical CSV, XLSX, and PDF artifacts through the same
-  registered actions used by Copilot, with provenance and authenticated local downloads.
-- **Voice** supports local Kokoro TTS, Microsoft Edge neural TTS, browser speech, optional
-  ElevenLabs TTS, and optional Deepgram STT.
-- **Communications** supports encrypted local SMTP account configuration, connection
-  testing, drafting, exact R4 send approval, duplicate protection, provider receipts, and
-  communication logs. IMAP inbox sync is still planned; the current inbox adapter returns
-  no synthetic messages.
-- **Embedded Local AI** bundles a pinned llama.cpp runtime and can install the verified
-  IBM Granite 4.1 3B Q4_K_M model with one click. After the first model download it needs
-  no LM Studio, Ollama, API key, account, paid service, or internet connection. External
-  loopback servers and cloud providers remain optional.
+| Stage | What TalentHunt does | Why it matters |
+| --- | --- | --- |
+| Define | Creates Talent Hunts with role, location, experience, skills, sources, and a Kanban pipeline. | Every sourcing decision has a clear role context. |
+| Discover | Runs cancellable, durable sourcing work across configured public result surfaces. Discoveries and Common Pool preserve useful identities, including filtered and rejected results. | Search work is retained without inflating active Candidate counts. |
+| Review | Keeps one canonical Candidate record with profile evidence, experience timeline, education, skills, notes, source provenance, and resume imports. | Dashboard, Candidate, Hunt, and Pipeline metrics all derive from the same data. |
+| Decide | Moves candidates through the pipeline, merges duplicates, supports candidate intake, and calculates experience from non-overlapping date intervals. | Recruiter decisions are evidence-led and consistent across views. |
+| Act | Drafts communications, records provider receipts, creates CSV/XLSX/PDF reports, and lets Copilot request registered actions. | Operational work is traceable instead of disappearing into chat. |
 
-## Core Principles
+Normal Copilot chat remains available while sourcing and enrichment run in the background.
+Only a conflicting search is blocked, and the active job remains visible with cancellation,
+retry, and restart reconciliation.
 
-1. **Copilot-first, not Copilot-only.** Pages visualize the same domain actions available
-   to the assistant.
-2. **One source of truth.** Candidate and pipeline metrics derive from canonical database
-   records, not cached UI counters.
-3. **Human control at consequential boundaries.** Sensitive, bulk, external, and secret
-   operations require stronger approval than ordinary chat text.
-4. **Honest execution.** The Copilot reports completed work only after the underlying
-   action or provider returns a real result.
-5. **Local by default.** The application binds only to loopback and stores recruiter data
-   in the configured local data directory.
+## The Control Model
+
+TalentHunt is designed for recruiting work that has consequences:
+
+- **One source of truth:** SQLite is authoritative for Candidates, Hunts, pipeline state,
+  approvals, and action history. ChromaDB is a rebuildable retrieval index, never the
+  source of permissions or counts.
+- **Guarded actions:** UI commands and Copilot tools share a typed action dispatcher with
+  input validation, scopes, risk levels, resource locks, idempotency, and durable results.
+- **Human approval:** Bulk, destructive, credential-related, and external actions require
+  an explicit confirmation appropriate to the risk. A chat response alone does not count
+  as successful execution.
+- **Recoverable local work:** Supported local mutations create Action History records and
+  expose exact seven-day Undo. External sends and other irreversible operations retain a
+  receipt instead of pretending they can be undone.
+- **Local by default:** the application, bundled model server, reports, and recruiter data
+  stay on the local machine and bind to loopback.
 
 ## Architecture
 
@@ -127,10 +115,29 @@ Open **[http://127.0.0.1:8080/](http://127.0.0.1:8080/)**. TalentHunt OS deliber
 rejects non-loopback hosts and ports other than `8080` because it contains private
 recruiting data.
 
-On first use, open **Settings → Embedded Local Copilot**, choose Lite or Standard, and
-select **Install**. TalentHunt downloads about 2.1 GB once, verifies the pinned size and
-SHA-256 checksum, stores the model in its private data directory, and starts it on
-`127.0.0.1`. At least 6 GB total RAM is required; Lite is recommended below 12 GB.
+### First Run
+
+1. Open the local address above and create the first recruiter account. Passwords must be
+   at least 12 characters and can be shown or hidden while typing.
+2. Create a Hunt, then set the target role, location, experience band, skills, and sources.
+3. Use **Discoveries** to review the retained pool before approving a profile into the
+   canonical Candidate database.
+4. Open the Copilot with a Hunt selected for context-aware work. Sensitive actions state
+   their scope and wait for confirmation.
+
+## Embedded Local Copilot
+
+TalentHunt can run Copilot without LM Studio, Ollama, an API key, an account, or a paid
+service. In **Settings → Embedded Local Copilot**, choose Lite or Standard and select
+**Install**. The first installation downloads the verified IBM Granite 4.1 3B Q4_K_M model
+once, checks its pinned size and SHA-256 hash, stores it in the private data directory, and
+starts the bundled llama.cpp server on `127.0.0.1`.
+
+- The download is about 2.1 GB and can be cancelled or retried.
+- The embedded model requires at least 6 GB total RAM; Lite is recommended below 12 GB.
+- External loopback servers and optional cloud providers remain available alternatives.
+- The model can request actions, but it cannot bypass approvals, action history, Undo,
+  scopes, or resource locks.
 
 ## Configuration
 
@@ -200,6 +207,17 @@ uv run pytest --cov=app --cov-report=term-missing
 See [Local Quality Workflow](docs/QUALITY.md) for review-only security and dependency
 audits, broader Ruff debt reports, local accessibility verification, and loopback Mailpit
 testing.
+
+## Documentation
+
+| Document | Use it for |
+| --- | --- |
+| [Application Logic](docs/APP_LOGIC.md) | Canonical data ownership, recruiting rules, action behavior, and operational contracts. |
+| [Copilot Capability Audit](docs/COPILOT_CAPABILITY_AUDIT.md) | What the Copilot can currently do, what is intentionally gated, and what remains. |
+| [Copilot-First Roadmap](docs/COPILOT_FIRST_ROADMAP.md) | Delivery stages, safety boundaries, and exit criteria. |
+| [Design Contract](DESIGN.md) | UI, responsive, accessibility, and Copilot interaction rules. |
+| [Quality Workflow](docs/QUALITY.md) | Local tests, security checks, accessibility audit, and optional Mailpit verification. |
+| [Dependency Security Decisions](docs/DEPENDENCY_SECURITY.md) | Reviewed dependencies, known advisory boundary, local model provenance, and re-review dates. |
 
 ## Data And Privacy
 
